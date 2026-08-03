@@ -3409,6 +3409,42 @@ What the catalogue sub-project inherits, and must not re-derive:
 - `SiteFactory`, `UserFactory` and the role factories, imported rather than re-written.
 - `Conflict` for refusing a delete that would orphan history — `removeCategory` and `removeSupplier` in the frontend both expect 409.
 
+## Follow-ups
+
+Real but deferred, recorded during execution and the final review. None blocks
+merge; each is cheap and none is load-bearing for sub-project 2.
+
+- **Short `SECRET_KEY` weakens JWT signing silently.** PyJWT warns
+  `InsecureKeyLengthWarning` below 32 bytes; the test key is 27. Production
+  keys from `get_random_secret_key()` are 50, so this is unreachable by
+  default — but nothing stops a short key in `.env`. Worth a length check in
+  settings beside the existing "no default" guard.
+- **`?isActive=banana` is silently ignored** rather than returning 400, so a
+  typo reads as "no filter". Decide the convention before sub-project 2 adds
+  a dozen more filters, since they will all copy this one.
+- **The last-owner guard is TOCTOU.** Two concurrent demotions of the last two
+  owners can both pass the check and commit, locking every owner endpoint.
+  Needs `select_for_update` in a transaction. Low likelihood on SQLite with a
+  single shop.
+- **`validate_password` is called without `user=`**, so
+  `UserAttributeSimilarityValidator` never fires — an owner can set a user's
+  password to their own email address.
+- **The second-`Site` guard returns 400 `validation_error`, not the 409
+  `conflict`** the spec's error table promises. Unreachable through today's
+  API; matters if a later sub-project exposes site creation.
+- **Trailing slashes are mandatory.** `POST /api/auth/login` (no slash) 301s,
+  and `fetch` downgrades a 301'd POST to GET. Worth a line in the README
+  before the frontend cutover.
+- **Three weak tests**, all mandated by this plan rather than introduced by an
+  implementer: `test_bootstrap_rejects_a_weak_password` asserts only that
+  `CommandError` was raised; the `id` half of
+  `test_id_and_is_default_are_read_only` cannot fail because DRF auto-protects
+  the pk; `Site.objects.current()`'s fallback-to-oldest-row branch is untested.
+- **`User.save()` lowercases email only on the instance path**, so
+  `QuerySet.update()` and `bulk_create()` bypass it. Documented SQLite
+  trade-off — the Postgres migration should add a functional unique index and
+  demote the normalisation to belt-and-braces.
+
 ## Deliberately Not Built
 
 Password reset, email sending, avatar upload, rate limiting, refresh-token rotation, OpenAPI schema generation, Docker, CI. None is required by any frontend screen that exists today.
