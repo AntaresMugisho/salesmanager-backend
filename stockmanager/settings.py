@@ -139,9 +139,7 @@ REST_FRAMEWORK = {
         "djangorestframework_camel_case.parser.CamelCaseFormParser",
         "djangorestframework_camel_case.parser.CamelCaseMultiPartParser",
     ),
-    # DEFAULT_PAGINATION_CLASS is added in Task 3, when the module exists.
-    # Unlike EXCEPTION_HANDLER, DRF's system check imports it eagerly, so
-    # naming it here would break `manage.py check` for two whole tasks.
+    "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.StandardPagination",
     "PAGE_SIZE": 20,
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",

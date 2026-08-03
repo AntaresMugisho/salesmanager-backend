@@ -54,3 +54,10 @@ def test_page_size_matches_the_frontend_default():
 
 def test_secret_key_is_not_the_scaffold_default():
     assert not settings.SECRET_KEY.startswith("django-insecure-")
+
+
+def test_pagination_class_is_registered():
+    assert (
+        settings.REST_FRAMEWORK["DEFAULT_PAGINATION_CLASS"]
+        == "apps.common.pagination.StandardPagination"
+    )
