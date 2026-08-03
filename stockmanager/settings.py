@@ -113,6 +113,8 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+AUTH_USER_MODEL = "accounts.User"
+
 # The frontend renders `error.message` straight into a toast, so an English
 # string is a user-visible bug rather than a cosmetic one.
 LANGUAGE_CODE = "fr-fr"
