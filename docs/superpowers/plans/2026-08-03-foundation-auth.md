@@ -37,6 +37,7 @@ These were confirmed by running the libraries at the installed versions. Do not 
 7. **Django 6.0 removed positional arguments to `Model.save()`.** Overrides must be `def save(self, **kwargs)` and call `super().save(**kwargs)`.
 8. `antares_dotenv.env(key, default)` **coerces types**: `"true"` → `True`, `"20"` → `20`, and **a value containing a comma becomes a list**. A single-value `ALLOWED_HOSTS=localhost` therefore returns a *string*, not a list. Always pass such values through the `_as_list()` helper in Task 1.
 9. simplejwt's `RefreshToken(raw)` checks the blacklist during construction when `token_blacklist` is installed, raising `TokenError`. No manual blacklist lookup is needed.
+13. **DRF downgrades `AuthenticationFailed` to 403 when a view has `authentication_classes = []`.** `handle_exception` refuses to emit a 401 without a `WWW-Authenticate` header, and with no authenticators `get_authenticate_header()` returns `None`. Confirmed: the same view returns 403 bare and 401 once `get_authenticate_header` is overridden. This bites `RefreshView`, which must keep `authentication_classes = []` so a client with a just-expired access token can still reach it.
 10. **`antares_dotenv.env()` cannot find this project's `.env`.** It calls python-dotenv's `load_dotenv()` with no path; python-dotenv locates the file by walking up from the *calling frame's* file, which is `antares_dotenv/core.py` inside site-packages. Discovery therefore starts in the virtualenv and never reaches the project root, so every call returns its default. Confirmed: `find_dotenv()` called from a project file finds the `.env`, while `env("SECRET_KEY")` returns `None` against the same `.env`. Settings must call `load_dotenv(BASE_DIR / ".env")` explicitly; `env()` is then used only for its type coercion.
 11. **A root `conftest.py` cannot set environment variables for settings.** pytest-django imports the settings module during `pytest_load_initial_conftests`, before the root `conftest.py` is imported. Confirmed with a settings module reading `os.environ[...]`: the run dies with `KeyError` despite a `conftest.py` that sets it. Test-time environment belongs in `stockmanager/settings_test.py`.
 12. **DRF's system check imports `DEFAULT_PAGINATION_CLASS` eagerly**, unlike `EXCEPTION_HANDLER`, which resolves lazily on the first exception. Naming a not-yet-written pagination class breaks `manage.py check` immediately. It is registered in Task 3, alongside the module.
@@ -2181,6 +2182,13 @@ def test_refresh_returns_a_new_access_token(api_client, session):
 
 
 def test_refresh_rejects_a_garbage_token(api_client, session):
+    """401, not 403.
+
+    Without `RefreshView.get_authenticate_header`, DRF downgrades this to
+    403 while the envelope still says `authentication_failed` — a
+    contradiction that would send the frontend down its permission-denied
+    path instead of back to the login screen.
+    """
     response = api_client.post(REFRESH, {"refreshToken": "pas-un-jeton"}, format="json")
     assert response.status_code == 401
     assert response.json()["code"] == "authentication_failed"
@@ -2286,8 +2294,25 @@ Append:
 
 ```python
 class RefreshView(APIView):
+    # No authenticator: a client whose access token has just expired must be
+    # able to reach this endpoint, and the default JWTAuthentication would
+    # reject its stale Authorization header before the view ever ran.
     authentication_classes = []
     permission_classes = [AllowAny]
+
+    def get_authenticate_header(self, request):
+        """Preserve 401 on an invalid refresh token.
+
+        DRF's `handle_exception` downgrades `AuthenticationFailed` to 403
+        whenever `get_authenticate_header()` is falsy — HTTP forbids a 401
+        without a `WWW-Authenticate` header, and with no authenticators there
+        is nothing to generate one. The downgrade would be actively harmful
+        here: the error envelope maps this exception to
+        `code: "authentication_failed"`, so the response would pair that code
+        with HTTP 403, and the frontend would report « pas la permission »
+        instead of sending the user back to the login screen.
+        """
+        return 'Bearer realm="api"'
 
     def post(self, request):
         serializer = RefreshSerializer(data=request.data)
