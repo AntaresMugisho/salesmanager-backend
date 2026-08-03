@@ -43,3 +43,7 @@ class LoginSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
+
+
+class RefreshSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField()

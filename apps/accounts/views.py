@@ -1,11 +1,15 @@
 from django.utils.translation import gettext_lazy as _
-from rest_framework.permissions import AllowAny
+from rest_framework import status
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.generics import RetrieveAPIView
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Site
-from apps.accounts.serializers import LoginSerializer, UserSerializer
+from apps.accounts.serializers import LoginSerializer, RefreshSerializer, UserSerializer
 from apps.common.exceptions import Conflict
 
 
@@ -37,3 +41,61 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         return Response(_session_payload(serializer.validated_data["user"]))
+
+
+class RefreshView(APIView):
+    # No authenticator: a client whose access token has just expired must be
+    # able to reach this endpoint, and the default JWTAuthentication would
+    # reject its stale Authorization header before the view ever ran.
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get_authenticate_header(self, request):
+        """Preserve 401 on an invalid refresh token.
+
+        DRF's `handle_exception` downgrades `AuthenticationFailed` to 403
+        whenever `get_authenticate_header()` is falsy — HTTP forbids a 401
+        without a `WWW-Authenticate` header, and with no authenticators there
+        is nothing to generate one. The downgrade would be actively harmful
+        here: the error envelope maps this exception to
+        `code: "authentication_failed"`, so the response would pair that code
+        with HTTP 403, and the frontend would report « pas la permission »
+        instead of sending the user back to the login screen.
+        """
+        return 'Bearer realm="api"'
+
+    def post(self, request):
+        serializer = RefreshSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            # simplejwt checks the blacklist during construction, so a token
+            # invalidated by logout raises here.
+            refresh = RefreshToken(serializer.validated_data["refresh_token"])
+        except TokenError as exc:
+            raise AuthenticationFailed(
+                _("Session expirée. Veuillez vous reconnecter.")
+            ) from exc
+        return Response({"access_token": str(refresh.access_token)})
+
+
+class LogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        raw = request.data.get("refresh_token")
+        if raw:
+            try:
+                RefreshToken(raw).blacklist()
+            except TokenError:
+                # Already blacklisted, expired or malformed. The client drops
+                # its session either way, so this is not worth an error.
+                pass
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MeView(RetrieveAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return self.request.user
