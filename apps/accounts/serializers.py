@@ -1,3 +1,5 @@
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -105,3 +107,68 @@ class SiteSerializer(serializers.ModelSerializer):
                 value = attrs[field]
                 attrs[field] = value.strip() or None if value else None
         return attrs
+
+
+class UserWriteSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "full_name",
+            "email",
+            "avatar_url",
+            "role",
+            "is_active",
+            "password",
+        ]
+        read_only_fields = ["id"]
+        extra_kwargs = {
+            "avatar_url": {"required": False, "allow_null": True},
+            "email": {"required": True},
+            "full_name": {"required": True},
+        }
+
+    def validate_email(self, value):
+        # Case-insensitive, because that is how login resolves an account.
+        existing = User.objects.filter(email__iexact=value.strip())
+        if self.instance is not None:
+            existing = existing.exclude(pk=self.instance.pk)
+        if existing.exists():
+            raise serializers.ValidationError(
+                _("Cette adresse e-mail est déjà utilisée.")
+            )
+        return value.strip().lower()
+
+    def validate_password(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages)) from exc
+        return value
+
+    def create(self, validated_data):
+        password = validated_data.pop("password", None)
+        if not password:
+            raise serializers.ValidationError(
+                {"password": [_("Un mot de passe est obligatoire.")]}
+            )
+        return User.objects.create_user(
+            email=validated_data.pop("email"),
+            full_name=validated_data.pop("full_name"),
+            password=password,
+            **validated_data,
+        )
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop("password", None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
+
+    def to_representation(self, instance):
+        return UserSerializer(instance).data

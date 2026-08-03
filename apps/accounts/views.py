@@ -1,5 +1,5 @@
 from django.utils.translation import gettext_lazy as _
-from rest_framework import status
+from rest_framework import filters, status, viewsets
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.generics import RetrieveAPIView
 from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
@@ -8,14 +8,16 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.accounts.models import Site
+from apps.accounts.models import Site, User
 from apps.accounts.serializers import (
     LoginSerializer,
     RefreshSerializer,
     SiteSerializer,
     UserSerializer,
+    UserWriteSerializer,
 )
 from apps.common.exceptions import Conflict
+from apps.common.filters import CamelCaseQueryParamsMixin
 from apps.common.permissions import IsOwner
 
 
@@ -140,3 +142,55 @@ class SettingsView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+def assert_not_last_owner(user, *, new_role=None, new_is_active=None) -> None:
+    """Refuse to remove the last active owner.
+
+    Covers deletion, deactivation and demotion, including the caller acting
+    on themselves. Without it a single misclick locks every owner-only
+    endpoint, leaving the Django admin as the only recovery path.
+    """
+    if user.role != User.Role.OWNER:
+        return
+
+    stays_owner = (new_role or user.role) == User.Role.OWNER
+    stays_active = user.is_active if new_is_active is None else new_is_active
+    if stays_owner and stays_active:
+        return
+
+    another_owner_remains = (
+        User.objects.filter(role=User.Role.OWNER, is_active=True)
+        .exclude(pk=user.pk)
+        .exists()
+    )
+    if not another_owner_remains:
+        raise Conflict(
+            _("Le dernier propriétaire actif ne peut pas être retiré.")
+        )
+
+
+class UserViewSet(CamelCaseQueryParamsMixin, viewsets.ModelViewSet):
+    queryset = User.objects.all()
+    serializer_class = UserWriteSerializer
+    permission_classes = [IsAuthenticated, IsOwner]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["full_name", "email"]
+    ordering_fields = ["full_name", "email", "role", "created_at"]
+    ordering = ["full_name"]
+
+    def perform_update(self, serializer):
+        assert_not_last_owner(
+            serializer.instance,
+            new_role=serializer.validated_data.get("role"),
+            new_is_active=serializer.validated_data.get("is_active"),
+        )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        # Deactivate, never destroy: movements, sales and expenses stamp
+        # userId and userName, and those historical reads must keep resolving.
+        assert_not_last_owner(instance, new_is_active=False)
+        instance.is_active = False
+        instance.save()
