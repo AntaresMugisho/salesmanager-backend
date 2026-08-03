@@ -1951,9 +1951,25 @@ def test_missing_fields_are_a_validation_error(api_client, site):
 
 
 def test_login_needs_no_token(api_client, site):
-    """The endpoint must be reachable without credentials."""
+    """The endpoint must be reachable without credentials.
+
+    Asserting the exact status, not merely `!= 401`: a 404 would satisfy the
+    looser assertion, so the test would have passed before the endpoint
+    existed.
+    """
     response = api_client.post(URL, {}, format="json")
-    assert response.status_code != 401
+    assert response.status_code == 400
+
+
+def test_login_ignores_a_malformed_authorization_header(api_client, site):
+    """`authentication_classes = []` is what makes this pass: otherwise DRF
+    would reject the header before the view ran."""
+    CashierFactory(email="alice@shop.cd", password="motdepasse-de-test")
+    api_client.credentials(HTTP_AUTHORIZATION="Bearer pas-un-jeton")
+    response = api_client.post(
+        URL, {"email": "alice@shop.cd", "password": "motdepasse-de-test"}, format="json"
+    )
+    assert response.status_code == 200
 
 
 def test_login_reports_an_unconfigured_deployment(api_client):
@@ -1975,10 +1991,9 @@ Expected: FAIL — 404, no URL is registered.
 - [ ] **Step 3: Write `apps/accounts/serializers.py`**
 
 ```python
-from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from apps.accounts.models import Site, User
+from apps.accounts.models import User
 from apps.common.exceptions import InvalidCredentials
 
 
@@ -2007,7 +2022,16 @@ class LoginSerializer(serializers.Serializer):
             User().set_password(attrs["password"])
             raise InvalidCredentials()
 
-        if not user.is_active or not user.check_password(attrs["password"]):
+        # Evaluated unconditionally, and deliberately not inlined into the
+        # condition below: `or` short-circuits, so `not user.is_active or
+        # not user.check_password(...)` would skip the hash entirely for a
+        # deactivated account and answer ~1e6x faster than a wrong password.
+        # That difference is trivially observable and enumerates every
+        # deactivated account — which is precisely what this endpoint's
+        # identical error bodies exist to prevent.
+        password_ok = user.check_password(attrs["password"])
+
+        if not user.is_active or not password_ok:
             raise InvalidCredentials()
 
         attrs["user"] = user
