@@ -1,7 +1,6 @@
-from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from apps.accounts.models import Site, User
+from apps.accounts.models import User
 from apps.common.exceptions import InvalidCredentials
 
 
@@ -30,7 +29,16 @@ class LoginSerializer(serializers.Serializer):
             User().set_password(attrs["password"])
             raise InvalidCredentials()
 
-        if not user.is_active or not user.check_password(attrs["password"]):
+        # Evaluated unconditionally, and deliberately not inlined into the
+        # condition below: `or` short-circuits, so `not user.is_active or
+        # not user.check_password(...)` would skip the hash entirely for a
+        # deactivated account and answer ~1e6x faster than a wrong password.
+        # That difference is trivially observable and enumerates every
+        # deactivated account — which is precisely what this endpoint's
+        # identical error bodies exist to prevent.
+        password_ok = user.check_password(attrs["password"])
+
+        if not user.is_active or not password_ok:
             raise InvalidCredentials()
 
         attrs["user"] = user

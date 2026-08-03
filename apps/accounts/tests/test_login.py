@@ -96,9 +96,49 @@ def test_missing_fields_are_a_validation_error(api_client, site):
 
 
 def test_login_needs_no_token(api_client, site):
-    """The endpoint must be reachable without credentials."""
+    """The endpoint must be reachable without credentials.
+
+    Asserting the exact status, not merely `!= 401`: a 404 would satisfy the
+    looser assertion, so the test would have passed before the endpoint
+    existed.
+    """
     response = api_client.post(URL, {}, format="json")
-    assert response.status_code != 401
+    assert response.status_code == 400
+
+
+def test_login_ignores_a_malformed_authorization_header(api_client, site):
+    """`authentication_classes = []` is what makes this pass: otherwise DRF
+    would reject the header before the view ran."""
+    CashierFactory(email="alice@shop.cd", password="motdepasse-de-test")
+    api_client.credentials(HTTP_AUTHORIZATION="Bearer pas-un-jeton")
+    response = api_client.post(
+        URL, {"email": "alice@shop.cd", "password": "motdepasse-de-test"}, format="json"
+    )
+    assert response.status_code == 200
+
+
+def test_inactive_account_still_hashes_the_password(api_client, site):
+    """Regression for the timing side-channel: `or` short-circuits, so
+    `not user.is_active or not user.check_password(...)` would skip the
+    hash entirely for a deactivated account, answering ~1e6x faster than a
+    wrong password and enumerating every deactivated account. Assert the
+    call count rather than timing, which would be flaky.
+    """
+    from unittest.mock import patch
+
+    from apps.accounts.models import User
+
+    CashierFactory(
+        email="alice@shop.cd", password="motdepasse-de-test", is_active=False
+    )
+    with patch.object(User, "check_password", return_value=False) as mocked:
+        response = api_client.post(
+            URL,
+            {"email": "alice@shop.cd", "password": "motdepasse-de-test"},
+            format="json",
+        )
+    assert response.status_code == 400
+    mocked.assert_called_once()
 
 
 def test_login_reports_an_unconfigured_deployment(api_client):
