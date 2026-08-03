@@ -2,15 +2,21 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.generics import RetrieveAPIView
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Site
-from apps.accounts.serializers import LoginSerializer, RefreshSerializer, UserSerializer
+from apps.accounts.serializers import (
+    LoginSerializer,
+    RefreshSerializer,
+    SiteSerializer,
+    UserSerializer,
+)
 from apps.common.exceptions import Conflict
+from apps.common.permissions import IsOwner
 
 
 def _session_payload(user) -> dict:
@@ -99,3 +105,38 @@ class MeView(RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class SettingsView(APIView):
+    """A singleton: no id in the path.
+
+    Reading is open to every authenticated role because the invoice and
+    receipt documents print the site's header. Writing is the owner's.
+    """
+
+    def get_permissions(self):
+        if self.request.method in SAFE_METHODS:
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsOwner()]
+
+    def get_object(self):
+        try:
+            return Site.objects.current()
+        except Site.DoesNotExist as exc:
+            raise Conflict(
+                _(
+                    "Aucun établissement n'est configuré. "
+                    "Exécutez « python manage.py bootstrap »."
+                )
+            ) from exc
+
+    def get(self, request):
+        return Response(SiteSerializer(self.get_object()).data)
+
+    def patch(self, request):
+        serializer = SiteSerializer(
+            self.get_object(), data=request.data, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
