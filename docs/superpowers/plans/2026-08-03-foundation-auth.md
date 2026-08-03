@@ -976,8 +976,15 @@ def test_page_size_param_in_camel_case():
 
 
 def test_page_size_is_capped():
-    _, page = paginate("pageSize=5000", list(range(500)))
-    assert len(page) == 100
+    _, page = paginate("pageSize=5000", list(range(1000)))
+    assert len(page) == 500
+
+
+def test_the_cap_admits_the_largest_page_the_frontend_asks_for():
+    """`pageSize: 500` appears in three frontend components that need every
+    active article at once. Capping below it truncates silently."""
+    _, page = paginate("pageSize=500", list(range(1000)))
+    assert len(page) == 500
 
 
 def test_nonsense_page_size_falls_back_to_the_default():
@@ -1075,7 +1082,14 @@ class StandardPagination(PageNumberPagination):
     """
 
     page_size = 20
-    max_page_size = 100
+    # 500, not a rounder 100: the frontend asks for `pageSize: 500` when it
+    # needs every active article at once (sale-line-editor, sale-totals-footer,
+    # movement-form-dialog) and 200 for category/supplier/customer pickers.
+    # A lower cap truncates *silently* — no error, just a short `results` —
+    # and sale-totals-footer then reads VAT rates from a Map built off that
+    # short page, falling back to 0 for anything missing. That prints a wrong
+    # tax total on a real invoice.
+    max_page_size = 500
     page_size_query_param = "page_size"
 
     def get_page_size(self, request):

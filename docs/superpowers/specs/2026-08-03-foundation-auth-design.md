@@ -73,7 +73,7 @@ stockmanager-backend/
   apps/
     common/
       models.py        UUIDModel abstract base
-      pagination.py    PageNumberPagination, page_size 20, ?pageSize override, max 100
+      pagination.py    PageNumberPagination, page_size 20, ?pageSize override, max 500
       exceptions.py    custom handler -> { code, message, fieldErrors }
       filters.py       camelCase query-param mixin
       permissions.py   IsOwner, IsManagerOrAbove, ReadOnlyForCashier
@@ -343,7 +343,7 @@ documented as a `Z`-suffixed instant, and formatting for display is its job.
 ### Pagination
 
 DRF `PageNumberPagination`, default page size 20 to match the frontend's
-`DEFAULT_PAGE_SIZE`, `?page=` and `?pageSize=`, maximum 100. `next` and
+`DEFAULT_PAGE_SIZE`, `?page=` and `?pageSize=`, maximum 500 — chosen from the callers, not picked round: the frontend requests `pageSize: 500` where it needs every active article at once, and a lower cap truncates silently rather than erroring. `next` and
 `previous` are absolute URLs. The envelope is exactly
 `{ count, next, previous, results }`.
 
