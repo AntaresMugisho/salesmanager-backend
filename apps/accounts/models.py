@@ -1,6 +1,8 @@
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from apps.common.models import UUIDModel
@@ -90,3 +92,52 @@ class User(UUIDModel, AbstractBaseUser, PermissionsMixin):
     @property
     def is_manager_or_above(self) -> bool:
         return self.role in {self.Role.OWNER, self.Role.MANAGER}
+
+
+class SiteManager(models.Manager):
+    def current(self):
+        """The single Site row.
+
+        Later sub-projects call this rather than threading a `site_id`
+        through their signatures. A `siteId` arriving from the client is
+        accepted and ignored — never used to filter — so the frontend needs
+        no change today and real multi-site scoping stays a migration rather
+        than a rewrite.
+        """
+        site = self.filter(is_default=True).first() or self.order_by("created_at").first()
+        if site is None:
+            raise Site.DoesNotExist(_("Aucun établissement n'est configuré."))
+        return site
+
+
+class Site(UUIDModel):
+    name = models.CharField(_("nom"), max_length=200)
+    address = models.TextField(_("adresse"))
+    phone = models.CharField(_("téléphone"), max_length=50, null=True, blank=True)
+    email = models.EmailField(_("adresse e-mail"), null=True, blank=True)
+    tax_number = models.CharField(
+        _("numéro d'identification fiscale"), max_length=100, null=True, blank=True
+    )
+    invoice_footer = models.TextField(_("pied de facture"), null=True, blank=True)
+    is_default = models.BooleanField(_("établissement par défaut"), default=True)
+
+    objects = SiteManager()
+
+    class Meta:
+        verbose_name = _("établissement")
+        verbose_name_plural = _("établissements")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_default"],
+                condition=Q(is_default=True),
+                name="unique_default_site",
+            )
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, **kwargs):
+        if self._state.adding and Site.objects.exists():
+            raise ValidationError(_("Un seul établissement peut exister."))
+        super().save(**kwargs)
