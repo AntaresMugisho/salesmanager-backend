@@ -6,6 +6,7 @@ from rest_framework.permissions import SAFE_METHODS, AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Site, User
@@ -83,6 +84,20 @@ class RefreshView(APIView):
             raise AuthenticationFailed(
                 _("Session expirée. Veuillez vous reconnecter.")
             ) from exc
+
+        # simplejwt only checks the token's own signature and blacklist
+        # status above -- it never loads the user. Without this, a
+        # deactivated account's refresh token keeps minting valid access
+        # tokens forever, even though every endpoint using those tokens
+        # correctly 401s. That leaves the standard 401-refresh-retry
+        # frontend interceptor looping instead of redirecting to login.
+        user_id = refresh.payload.get(api_settings.USER_ID_CLAIM)
+        user = User.objects.filter(**{api_settings.USER_ID_FIELD: user_id}).first()
+        if user is None or not user.is_active:
+            raise AuthenticationFailed(
+                _("Session expirée. Veuillez vous reconnecter.")
+            )
+
         return Response({"access_token": str(refresh.access_token)})
 
 
@@ -179,6 +194,17 @@ class UserViewSet(CamelCaseQueryParamsMixin, viewsets.ModelViewSet):
     search_fields = ["full_name", "email"]
     ordering_fields = ["full_name", "email", "role", "created_at"]
     ordering = ["full_name"]
+
+    def get_queryset(self):
+        # A small manual filter rather than django-filter: the only
+        # boolean the owner's user-management screen needs to filter on.
+        # `CamelCaseQueryParamsMixin` (mixed in above) already translates
+        # `?isActive=false` to `is_active` before this runs.
+        queryset = super().get_queryset()
+        raw = self.request.query_params.get("is_active")
+        if raw is not None and raw.lower() in ("true", "false"):
+            queryset = queryset.filter(is_active=raw.lower() == "true")
+        return queryset
 
     def perform_update(self, serializer):
         assert_not_last_owner(

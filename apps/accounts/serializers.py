@@ -19,6 +19,20 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class UserDetailSerializer(UserSerializer):
+    """`UserSerializer` plus `is_active`, for the owner-only users endpoint.
+
+    Kept separate from `UserSerializer` rather than adding the field there:
+    `UserSerializer` is also the session user shape returned by
+    `/auth/login/` and `/auth/me/`, where the frontend's `User` type has no
+    `isActive` field and a login test asserts the exact key set.
+    """
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + ["is_active"]
+        read_only_fields = fields
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, trim_whitespace=False)
@@ -171,4 +185,4 @@ class UserWriteSerializer(serializers.ModelSerializer):
         return instance
 
     def to_representation(self, instance):
-        return UserSerializer(instance).data
+        return UserDetailSerializer(instance).data

@@ -39,7 +39,27 @@ def test_list_is_paginated(auth_client, site, owner):
 
 def test_list_rows_are_camel_case(auth_client, site, owner):
     row = auth_client(owner).get(URL).json()["results"][0]
-    assert set(row) == {"id", "fullName", "email", "avatarUrl", "role"}
+    assert set(row) == {"id", "fullName", "email", "avatarUrl", "role", "isActive"}
+
+
+def test_list_rows_include_is_active(auth_client, site, owner):
+    row = auth_client(owner).get(URL).json()["results"][0]
+    assert row["isActive"] is True
+
+
+def test_deactivated_user_is_still_listed(auth_client, site, owner):
+    target = CashierFactory(is_active=False)
+    ids = [row["id"] for row in auth_client(owner).get(URL).json()["results"]]
+    assert str(target.id) in ids
+
+
+def test_filters_by_is_active(auth_client, site, owner):
+    inactive = CashierFactory(is_active=False)
+    CashierFactory(is_active=True)
+    response = auth_client(owner).get(f"{URL}?isActive=false")
+    rows = response.json()["results"]
+    assert [row["id"] for row in rows] == [str(inactive.id)]
+    assert all(row["isActive"] is False for row in rows)
 
 
 def test_list_honours_camel_case_page_size(auth_client, site, owner):

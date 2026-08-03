@@ -36,6 +36,16 @@ def test_login_returns_the_session(api_client, site):
     }
 
 
+def test_login_user_payload_has_no_is_active(api_client, site):
+    """`UserSerializer` is the session shape; `isActive` is exclusive to the
+    users-management endpoint's `UserDetailSerializer`."""
+    CashierFactory(email="alice@shop.cd", password="motdepasse-de-test")
+    response = api_client.post(
+        URL, {"email": "alice@shop.cd", "password": "motdepasse-de-test"}, format="json"
+    )
+    assert "isActive" not in response.json()["user"]
+
+
 def test_the_payload_is_camel_case(api_client, site):
     CashierFactory(email="alice@shop.cd", password="motdepasse-de-test")
     response = api_client.post(

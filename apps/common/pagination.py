@@ -10,7 +10,14 @@ class StandardPagination(PageNumberPagination):
     """
 
     page_size = 20
-    max_page_size = 100
+    # 500, not a rounder 100: the frontend asks for `pageSize: 500` when it
+    # needs every active article at once (sale-line-editor, sale-totals-footer,
+    # movement-form-dialog) and 200 for category/supplier/customer pickers.
+    # A lower cap truncates *silently* — no error, just a short `results` —
+    # and sale-totals-footer then reads VAT rates from a Map built off that
+    # short page, falling back to 0 for anything missing. That prints a wrong
+    # tax total on a real invoice.
+    max_page_size = 500
     page_size_query_param = "page_size"
 
     def get_page_size(self, request):

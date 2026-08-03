@@ -50,6 +50,20 @@ def test_refresh_rejects_a_garbage_token(api_client, session):
     assert response.json()["code"] == "authentication_failed"
 
 
+def test_refresh_rejects_a_deactivated_users_token(api_client, session):
+    """A deactivated account's refresh token must stop minting access
+    tokens, or the frontend's 401-refresh-retry interceptor loops instead
+    of redirecting to login."""
+    from apps.accounts.models import User
+
+    User.objects.filter(email="alice@shop.cd").update(is_active=False)
+    response = api_client.post(
+        REFRESH, {"refreshToken": session["refreshToken"]}, format="json"
+    )
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_failed"
+
+
 def test_refresh_requires_the_field(api_client, session):
     response = api_client.post(REFRESH, {}, format="json")
     assert response.status_code == 400
@@ -103,6 +117,14 @@ def test_me_returns_the_current_user(api_client, session):
     response = client.get(ME)
     assert response.status_code == 200
     assert response.json() == session["user"]
+
+
+def test_me_payload_has_no_is_active(api_client, session):
+    """`isActive` is exclusive to the owner-only users endpoint, not the
+    session user shape."""
+    client = bearer(api_client, session["accessToken"])
+    response = client.get(ME)
+    assert "isActive" not in response.json()
 
 
 def test_me_rejects_anonymous_callers(api_client, site):

@@ -32,8 +32,15 @@ def test_page_size_param_in_camel_case():
 
 
 def test_page_size_is_capped():
-    _, page = paginate("pageSize=5000", list(range(500)))
-    assert len(page) == 100
+    _, page = paginate("pageSize=5000", list(range(1000)))
+    assert len(page) == 500
+
+
+def test_the_cap_admits_the_largest_page_the_frontend_asks_for():
+    """`pageSize: 500` appears in three frontend components that need every
+    active article at once. Capping below it truncates silently."""
+    _, page = paginate("pageSize=500", list(range(1000)))
+    assert len(page) == 500
 
 
 def test_nonsense_page_size_falls_back_to_the_default():
