@@ -37,6 +37,9 @@ These were confirmed by running the libraries at the installed versions. Do not 
 7. **Django 6.0 removed positional arguments to `Model.save()`.** Overrides must be `def save(self, **kwargs)` and call `super().save(**kwargs)`.
 8. `antares_dotenv.env(key, default)` **coerces types**: `"true"` → `True`, `"20"` → `20`, and **a value containing a comma becomes a list**. A single-value `ALLOWED_HOSTS=localhost` therefore returns a *string*, not a list. Always pass such values through the `_as_list()` helper in Task 1.
 9. simplejwt's `RefreshToken(raw)` checks the blacklist during construction when `token_blacklist` is installed, raising `TokenError`. No manual blacklist lookup is needed.
+10. **`antares_dotenv.env()` cannot find this project's `.env`.** It calls python-dotenv's `load_dotenv()` with no path; python-dotenv locates the file by walking up from the *calling frame's* file, which is `antares_dotenv/core.py` inside site-packages. Discovery therefore starts in the virtualenv and never reaches the project root, so every call returns its default. Confirmed: `find_dotenv()` called from a project file finds the `.env`, while `env("SECRET_KEY")` returns `None` against the same `.env`. Settings must call `load_dotenv(BASE_DIR / ".env")` explicitly; `env()` is then used only for its type coercion.
+11. **A root `conftest.py` cannot set environment variables for settings.** pytest-django imports the settings module during `pytest_load_initial_conftests`, before the root `conftest.py` is imported. Confirmed with a settings module reading `os.environ[...]`: the run dies with `KeyError` despite a `conftest.py` that sets it. Test-time environment belongs in `stockmanager/settings_test.py`.
+12. **DRF's system check imports `DEFAULT_PAGINATION_CLASS` eagerly**, unlike `EXCEPTION_HANDLER`, which resolves lazily on the first exception. Naming a not-yet-written pagination class breaks `manage.py check` immediately. It is registered in Task 3, alongside the module.
 
 ## File Structure
 
@@ -45,7 +48,8 @@ These were confirmed by running the libraries at the installed versions. Do not 
 | `requirements.txt` | pinned dependencies |
 | `.env.example` / `.env` | configuration; `.env` is gitignored |
 | `pytest.ini` | pytest + pytest-django wiring |
-| `conftest.py` | sets test env vars **before** Django setup; shared fixtures |
+| `stockmanager/settings_test.py` | sets test env vars, then star-imports settings |
+| `conftest.py` | shared fixtures only (Task 6) |
 | `stockmanager/settings.py` | env-driven configuration, DRF/JWT/CORS wiring |
 | `stockmanager/urls.py` | mounts `/api/` and `/admin/` |
 | `apps/common/models.py` | `UUIDModel` abstract base |
@@ -69,7 +73,7 @@ These were confirmed by running the libraries at the installed versions. Do not 
 
 **Files:**
 - Modify: `requirements.txt`
-- Create: `.env.example`, `.env`, `pytest.ini`, `conftest.py`
+- Create: `.env.example`, `.env`, `pytest.ini`, `stockmanager/settings_test.py`
 - Modify: `stockmanager/settings.py` (full rewrite)
 - Create: `apps/__init__.py`, `apps/common/__init__.py`, `apps/common/apps.py`, `apps/accounts/__init__.py`, `apps/accounts/apps.py`
 - Create: `apps/common/tests/__init__.py`, `apps/accounts/tests/__init__.py`
@@ -237,8 +241,19 @@ from pathlib import Path
 
 import dj_database_url
 from antares_dotenv import env
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# `antares_dotenv.env()` calls python-dotenv's `load_dotenv()` with no path.
+# python-dotenv then locates the .env by walking up from the *calling frame's*
+# file — which is `antares_dotenv/core.py`, inside site-packages. It therefore
+# searches upward from the virtualenv and never sees this project's .env, so
+# every `env()` call returns its default.
+#
+# Loading explicitly from BASE_DIR fixes discovery. `env()` is still used
+# below for its type coercion; it reads from os.environ, which this populates.
+load_dotenv(BASE_DIR / ".env")
 
 
 def _as_list(value) -> list[str]:
@@ -354,7 +369,9 @@ REST_FRAMEWORK = {
         "djangorestframework_camel_case.parser.CamelCaseFormParser",
         "djangorestframework_camel_case.parser.CamelCaseMultiPartParser",
     ),
-    "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.StandardPagination",
+    # DEFAULT_PAGINATION_CLASS is added in Task 3, when the module exists.
+    # Unlike EXCEPTION_HANDLER, DRF's system check imports it eagerly, so
+    # naming it here would break `manage.py check` for two whole tasks.
     "PAGE_SIZE": 20,
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
@@ -390,24 +407,31 @@ LOGGING = {
 
 - [ ] **Step 7: Write the pytest wiring**
 
-`pytest.ini`:
+Tests must not depend on a developer's `.env` — it is gitignored, so a fresh
+clone and any future CI would have none. The environment therefore has to be
+set before `stockmanager/settings.py` is imported.
 
-```ini
-[pytest]
-DJANGO_SETTINGS_MODULE = stockmanager.settings
-python_files = test_*.py
-addopts = -q --strict-markers
-testpaths = apps
-```
+**A root `conftest.py` cannot do this.** pytest-django resolves
+`DJANGO_SETTINGS_MODULE` and imports the settings module during
+`pytest_load_initial_conftests`, which runs *before* the root `conftest.py`
+is imported. Verified: a `conftest.py` setting `os.environ` still leaves
+settings.py raising `KeyError` on the same variable.
 
-`conftest.py` at the repository root:
+A dedicated test settings module has no such ordering problem, because the
+assignments and the import live in one file, in order.
+
+`stockmanager/settings_test.py`:
 
 ```python
-"""Test-time environment.
+"""Settings for the test suite.
 
-These run at import time, before pytest-django calls `django.setup()`, so
-settings.py sees them. `setdefault` plus python-dotenv's no-override
-behaviour means a developer's real .env can never leak into a test run.
+The environment is populated *before* `stockmanager.settings` is imported —
+which is the whole point of this module. A root conftest.py cannot do this:
+pytest-django imports the settings module during
+`pytest_load_initial_conftests`, before conftest.py is loaded.
+
+`setdefault` means a real environment variable still wins, so CI can point
+the suite at another database without editing this file.
 """
 
 import os
@@ -415,9 +439,26 @@ import os
 os.environ.setdefault("SECRET_KEY", "insecure-key-for-tests-only")
 os.environ.setdefault("DEBUG", "false")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
-os.environ.setdefault("ALLOWED_HOSTS", "localhost,testserver")
+# pytest-django appends "testserver" to ALLOWED_HOSTS itself; naming it here
+# only produces a duplicate entry.
+os.environ.setdefault("ALLOWED_HOSTS", "localhost,127.0.0.1")
 os.environ.setdefault("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+
+from stockmanager.settings import *  # noqa: E402,F401,F403
 ```
+
+`pytest.ini`:
+
+```ini
+[pytest]
+DJANGO_SETTINGS_MODULE = stockmanager.settings_test
+python_files = test_*.py
+addopts = -q --strict-markers
+testpaths = apps
+```
+
+No root `conftest.py` is created in this task. Task 6 creates one, for
+fixtures only.
 
 - [ ] **Step 8: Run the test to verify it passes**
 
@@ -781,7 +822,8 @@ return a bare 500 with no traceback under any DEBUG setting."
 
 **Files:**
 - Create: `apps/common/pagination.py`, `apps/common/filters.py`
-- Test: `apps/common/tests/test_filters.py`, `apps/common/tests/test_pagination.py`
+- Modify: `stockmanager/settings.py` (register `DEFAULT_PAGINATION_CLASS`)
+- Test: `apps/common/tests/test_filters.py`, `apps/common/tests/test_pagination.py`, `apps/common/tests/test_settings.py`
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -1050,12 +1092,36 @@ class StandardPagination(PageNumberPagination):
         return min(requested, self.max_page_size)
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [ ] **Step 5: Register the pagination class**
+
+Task 1 deliberately left `DEFAULT_PAGINATION_CLASS` out, because DRF's system
+check imports it eagerly and the module did not exist yet. It does now. Add
+to `REST_FRAMEWORK` in `stockmanager/settings.py`, replacing the comment that
+stands in for it:
+
+```python
+    "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.StandardPagination",
+```
+
+Add the matching assertion to `apps/common/tests/test_settings.py`:
+
+```python
+def test_pagination_class_is_registered():
+    assert (
+        settings.REST_FRAMEWORK["DEFAULT_PAGINATION_CLASS"]
+        == "apps.common.pagination.StandardPagination"
+    )
+```
+
+Run: `python manage.py check`
+Expected: no issues — this is what would have failed had Task 1 named the class early.
+
+- [ ] **Step 6: Run the tests to verify they pass**
 
 Run: `python -m pytest apps/common/tests/ -v`
 Expected: all pass (settings, exceptions, filters, pagination).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add -A
@@ -1483,8 +1549,7 @@ sub-projects call instead of threading siteId through."
 ### Task 6: Test factories and permission classes
 
 **Files:**
-- Create: `apps/accounts/tests/factories.py`, `apps/common/permissions.py`
-- Modify: `conftest.py` (add shared fixtures)
+- Create: `apps/accounts/tests/factories.py`, `apps/common/permissions.py`, `conftest.py`
 - Test: `apps/common/tests/test_permissions.py`
 
 **Interfaces:**
@@ -1691,9 +1756,16 @@ class ReadOnlyForCashier(BasePermission):
 
 - [ ] **Step 5: Add the shared fixtures**
 
-Append to the root `conftest.py`:
+Create the root `conftest.py`. Test-time environment lives in
+`stockmanager/settings_test.py`, not here — this file is fixtures only:
 
 ```python
+"""Shared fixtures.
+
+Django imports live inside the fixture bodies: this module is imported
+before `django.setup()` has run.
+"""
+
 import pytest
 
 
@@ -1745,7 +1817,7 @@ def auth_client(api_client):
     return authenticate
 ```
 
-The imports are inside the fixtures because this module runs before Django is configured.
+The imports are inside the fixtures because this module is imported before Django is configured.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
