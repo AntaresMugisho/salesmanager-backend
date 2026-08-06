@@ -48,7 +48,8 @@ always serialises `null`.
 ```
 apps/
   common/          # extended, not replaced
-    filters.py     # + StrictBooleanFilter, StrictChoiceFilter
+    filters.py     # + StrictBooleanFilter, AliasedOrderingFilter
+    dates.py       # + SHOP_TIME_ZONE calendar-date bounds
     views.py       # + CatalogueViewSet base
   catalogue/
     models.py      # Category, Supplier, Article
@@ -85,7 +86,7 @@ gets a new `apps/sales/`, which will import from both.
 |---|---|---|
 | `id` | UUID pk | |
 | `name` | `CharField(60)` | unique, case-insensitive |
-| `description` | `CharField(200, blank)` | stored `""`, serialised `null` |
+| `description` | `CharField(200, null, blank)` | serialised `null` when empty |
 
 `articleCount` is annotated at read time (`Count("articles")`), never stored. It
 counts **all** articles, active and archived — matching `withArticleCounts` in
@@ -97,11 +98,11 @@ counts **all** articles, active and archived — matching `withArticleCounts` in
 |---|---|---|
 | `id` | UUID pk | |
 | `name` | `CharField(80)` | unique, case-insensitive |
-| `contact_name` | `CharField(80, blank)` | |
-| `email` | `EmailField(blank)` | |
-| `phone` | `CharField(20, blank)` | |
-| `address` | `CharField(200, blank)` | |
-| `notes` | `CharField(500, blank)` | |
+| `contact_name` | `CharField(80, null, blank)` | |
+| `email` | `EmailField(null, blank)` | |
+| `phone` | `CharField(20, null, blank)` | |
+| `address` | `CharField(200, null, blank)` | |
+| `notes` | `CharField(500, null, blank)` | |
 | `is_active` | `BooleanField(default=True)` | |
 | `created_at` | `DateTimeField(auto_now_add)` | |
 
@@ -113,7 +114,7 @@ counts **all** articles, active and archived — matching `withArticleCounts` in
 | `sku` | `CharField(32)` | unique, case-insensitive |
 | `barcode` | `CharField(13, null)` | unique when present; 8 or 13 digits |
 | `name` | `CharField(120)` | |
-| `description` | `CharField(500, blank)` | |
+| `description` | `CharField(500, null, blank)` | |
 | `category` | FK → `Category`, `PROTECT` | `related_name="articles"` |
 | `supplier` | FK → `Supplier`, `PROTECT`, null | |
 | `unit` | `TextChoices(5)` | `PIECE / KG / LITRE / PAQUET / CARTON` |
@@ -169,8 +170,8 @@ otherwise                      -> IN_STOCK
 | `quantity_before` | `PositiveIntegerField` | frozen at write time |
 | `quantity_after` | `PositiveIntegerField` | frozen at write time |
 | `unit_cost` | `PositiveIntegerField(null)` | cents |
-| `reference` | `CharField(40, blank)` | |
-| `note` | `CharField(300, blank)` | |
+| `reference` | `CharField(40, null, blank)` | |
+| `note` | `CharField(300, null, blank)` | |
 | `user` | FK → `User`, `PROTECT` | |
 | `user_name` | `CharField(150)` | denormalised at write time |
 | `created_at` | `DateTimeField(auto_now_add)` | |
@@ -414,15 +415,16 @@ the French message; the index is what makes the guarantee true under
 concurrency. This is a deliberate departure from sub-project 1's email
 normalisation, which relied on `save()` and is recorded there as a follow-up.
 
-Empty optional strings are stored `""` and serialised `null`, matching how
-sub-project 1 renders `Site.phone`. The frontend sends `""` from an untouched
-optional input and expects `null` back.
+Optional strings follow sub-project 1's `Site` convention exactly: the column is
+`null=True, blank=True`, the serializer field is
+`required=False, allow_blank=True, allow_null=True`, and a `validate()` pass
+normalises `""` and whitespace to `None`. The frontend posts `""` from an
+untouched optional input and its types promise `string | null` back.
 
-**`Article.barcode` is the exception: it stores `NULL`, not `""`.** It carries a
-uniqueness constraint, and `""` is a value that collides with itself — two
-articles without barcodes would clash. `NULL` does not compare equal to `NULL`,
-so any number of articles may lack one. The serializer converts `""` to `None`
-on the way in.
+This matters most for `Article.barcode`, which is also unique: `""` is a value
+that collides with itself, so two articles without barcodes would clash, while
+`NULL` never compares equal to `NULL`. The convention and the constraint agree
+only because storage is `NULL`.
 
 The `type` / `reason` pairing is **not** enforced. `REASONS_BY_TYPE` in
 `types/domain.ts` populates the form's select; `services/stock.ts` never
@@ -456,6 +458,14 @@ case-insensitive; anything else is a 400. Absent means no filter.
 Sub-project 1's hand-rolled `?isActive=` on `UserViewSet` is retrofitted onto
 `StrictBooleanFilter`, closing the follow-up recorded in that plan and leaving
 one convention rather than two.
+
+`ordering` gets the same treatment, for the same reason. DRF's `OrderingFilter`
+**silently drops** an unrecognised term and falls back to the default ordering —
+verified by reading `remove_invalid_fields`, which filters the term list rather
+than rejecting it. `AliasedOrderingFilter` in `apps/common/filters.py` raises
+400 instead, and additionally maps a public sort key onto a different queryset
+expression, which `ordering=stock` needs: the annotation is `stock_quantity`,
+and DRF's valid-field check compares against queryset names directly.
 
 ### Shared viewset base
 
