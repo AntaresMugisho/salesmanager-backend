@@ -196,3 +196,20 @@ class TestRecordedFields:
         movement = post(article, site, owner, reference="  BL-42 ", note=" Reçu ")
         assert movement.reference == "BL-42"
         assert movement.note == "Reçu"
+
+
+class TestTransactionLink:
+    def test_a_movement_defaults_to_no_transaction(self, site, owner):
+        article = ArticleFactory()
+        assert post(article, site, owner).transaction is None
+
+    def test_a_movement_can_be_linked_to_a_header(self, site, owner):
+        from apps.stock.tests.factories import StockTransactionFactory
+
+        article = ArticleFactory()
+        header = StockTransactionFactory(user=owner)
+
+        movement = post(article, site, owner, stock_transaction=header)
+
+        assert movement.transaction == header
+        assert list(header.lines.all()) == [movement]

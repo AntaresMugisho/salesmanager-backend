@@ -40,6 +40,16 @@ def end_of_day(value: date) -> datetime:
     return local.astimezone(UTC)
 
 
+def shop_today() -> date:
+    """The shop's current calendar date.
+
+    Not `timezone.now().date()`, which is the UTC date: at 00h30 in Goma it
+    is still yesterday in UTC, and a transaction created then would be
+    numbered into the wrong year every 1 January.
+    """
+    return timezone.now().astimezone(shop_timezone()).date()
+
+
 def today_start() -> datetime:
     """Local midnight of the shop's current day, as an aware UTC datetime."""
-    return start_of_day(timezone.now().astimezone(shop_timezone()).date())
+    return start_of_day(shop_today())

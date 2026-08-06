@@ -177,6 +177,31 @@ class TestCreate:
         assert response.status_code == 400
         assert "articleId" in response.json()["fieldErrors"]
 
+    def test_transaction_id_carries_a_value_for_a_line(
+        self, auth_client, manager, site
+    ):
+        """Replaces the hardcoded null sub-project 2 shipped. `saleId` keeps
+        its placeholder until sub-project 4."""
+        from apps.stock.services import apply_movement
+        from apps.stock.tests.factories import StockTransactionFactory
+
+        header = StockTransactionFactory(user=manager)
+        article = ArticleFactory()
+        apply_movement(
+            article=article,
+            site=site,
+            type="IN",
+            reason="PURCHASE",
+            quantity=5,
+            user=manager,
+            stock_transaction=header,
+        )
+
+        row = auth_client(manager).get(URL).json()["results"][0]
+
+        assert row["transactionId"] == str(header.id)
+        assert row["saleId"] is None
+
     def test_a_cashier_may_not_post(self, auth_client, cashier, site):
         article = ArticleFactory()
         response = auth_client(cashier).post(

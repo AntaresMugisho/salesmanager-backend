@@ -3,7 +3,7 @@ from factory.django import DjangoModelFactory
 
 from apps.accounts.tests.factories import SiteFactory, UserFactory
 from apps.catalogue.tests.factories import ArticleFactory
-from apps.stock.models import StockLevel, StockMovement
+from apps.stock.models import StockLevel, StockMovement, StockTransaction
 
 
 class StockLevelFactory(DjangoModelFactory):
@@ -32,3 +32,21 @@ class StockMovementFactory(DjangoModelFactory):
     unit_cost = 1000
     reference = None
     note = None
+
+
+class StockTransactionFactory(DjangoModelFactory):
+    class Meta:
+        model = StockTransaction
+
+    reference = factory.Sequence(lambda n: f"TR-2026-{n + 1:04d}")
+    site = factory.SubFactory(SiteFactory)
+    user = factory.SubFactory(UserFactory)
+    user_name = factory.LazyAttribute(lambda obj: obj.user.full_name)
+    user_reference = None
+    type = StockMovement.Type.IN
+    reason = StockMovement.Reason.PURCHASE
+    supplier = None
+    supplier_name = None
+    note = None
+    line_count = 0
+    total_quantity = 0

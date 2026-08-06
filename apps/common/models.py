@@ -16,3 +16,32 @@ class UUIDModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+class DocumentSequence(models.Model):
+    """One counter row per document prefix and year.
+
+    Deliberately *not* a UUIDModel. This is infrastructure, not a domain
+    object: nothing links to it, nothing serialises it, and no API exposes
+    it. A plain auto pk is the honest shape.
+
+    Sub-project 3 allocates `TR-`; sub-project 4 allocates `FA-` from this
+    same table with no change.
+    """
+
+    prefix = models.CharField(max_length=8)
+    year = models.PositiveIntegerField()
+    last_number = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "séquence de document"
+        verbose_name_plural = "séquences de document"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["prefix", "year"],
+                name="one_sequence_per_prefix_and_year",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.prefix}-{self.year}: {self.last_number}"

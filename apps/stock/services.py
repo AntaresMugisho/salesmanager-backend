@@ -32,12 +32,18 @@ def apply_movement(
     unit_cost: int | None = None,
     reference: str | None = None,
     note: str | None = None,
+    stock_transaction=None,
     field_prefix: str = "",
 ) -> StockMovement:
     """Post one movement and update the level it applies to.
 
     `quantity` is a delta for IN and OUT, and the counted *target* for
     ADJUSTMENT — the recorded quantity is then the delta that was applied.
+
+    `stock_transaction` links this movement to the header it is a line of.
+    Named `stock_transaction` rather than `transaction` because that name is
+    bound to `django.db.transaction` in this module — shadowing it inside the
+    function that opens the atomic block is how a subtle bug gets written.
 
     `field_prefix` routes validation errors to a form row: passing
     `"lines.2."` produces the key `lines.2.quantity`, which is
@@ -99,6 +105,7 @@ def apply_movement(
         unit_cost=unit_cost,
         reference=_clean(reference),
         note=_clean(note),
+        transaction=stock_transaction,
         user=user,
         user_name=user.full_name,
     )

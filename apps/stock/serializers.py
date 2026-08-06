@@ -13,10 +13,12 @@ class StockMovementSerializer(serializers.ModelSerializer):
     article_id = serializers.UUIDField(source="article.id", read_only=True)
     site_id = serializers.UUIDField(source="site.id", read_only=True)
     user_id = serializers.UUIDField(source="user.id", read_only=True)
-    # No columns yet. Sub-project 3 adds `transaction`, sub-project 4 adds
-    # `sale`; each swaps one line here. The keys must be present now because
-    # the frontend's StockMovement type requires them.
-    transaction_id = serializers.SerializerMethodField()
+    # Reads the model's `transaction_id` attname directly; DRF renders a
+    # None attribute as null without help.
+    transaction_id = serializers.UUIDField(read_only=True)
+    # No column yet. Sub-project 4 adds `sale` and swaps this line. The key
+    # must be present now because the frontend's StockMovement type requires
+    # it.
     sale_id = serializers.SerializerMethodField()
 
     class Meta:
@@ -40,9 +42,6 @@ class StockMovementSerializer(serializers.ModelSerializer):
             "user_name",
             "created_at",
         ]
-
-    def get_transaction_id(self, obj) -> None:
-        return None
 
     def get_sale_id(self, obj) -> None:
         return None
