@@ -62,6 +62,19 @@ class SupplierViewSet(CatalogueViewSet):
                 )
                 % {"count": used, "plural": "s" if used > 1 else ""}
             )
+
+        # StockTransaction.supplier is PROTECT, so without this the delete
+        # raises ProtectedError and the envelope renders a 500.
+        transactions = instance.transactions.count()
+        if transactions:
+            raise Conflict(
+                _(
+                    "Ce fournisseur est lié à %(count)d transaction%(plural)s "
+                    "et ne peut pas être supprimé."
+                )
+                % {"count": transactions, "plural": "s" if transactions > 1 else ""}
+            )
+
         instance.delete()
 
 

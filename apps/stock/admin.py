@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.stock.models import StockLevel, StockMovement
+from apps.stock.models import StockLevel, StockMovement, StockTransaction
 
 
 @admin.register(StockLevel)
@@ -25,6 +25,33 @@ class StockMovementAdmin(admin.ModelAdmin):
     search_fields = ["article__sku", "article__name", "reference"]
     # Append-only. The admin must not offer a way to rewrite the ledger.
     readonly_fields = [f.name for f in StockMovement._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(StockTransaction)
+class StockTransactionAdmin(admin.ModelAdmin):
+    list_display = [
+        "reference",
+        "created_at",
+        "type",
+        "reason",
+        "supplier_name",
+        "line_count",
+        "total_quantity",
+        "user_name",
+    ]
+    list_filter = ["type", "reason"]
+    search_fields = ["reference", "user_reference", "supplier_name"]
+    # Immutable, like the movements it heads.
+    readonly_fields = [f.name for f in StockTransaction._meta.fields]
 
     def has_add_permission(self, request):
         return False

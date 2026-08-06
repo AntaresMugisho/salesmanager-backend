@@ -154,6 +154,74 @@ class TestDelete:
         )
 
 
+    def test_a_supplier_with_transactions_is_409_not_500(
+        self, auth_client, owner, site
+    ):
+        """StockTransaction.supplier is PROTECT. Without an explicit guard
+        this surfaces as an unhandled ProtectedError."""
+        from apps.stock.services import create_transaction
+
+        supplier = SupplierFactory()
+        create_transaction(
+            type="IN",
+            reason="PURCHASE",
+            lines=[{"article": ArticleFactory(), "quantity": 1, "unit_cost": None}],
+            user=owner,
+            site=site,
+            supplier=supplier,
+        )
+
+        response = auth_client(owner).delete(detail_url(supplier))
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "conflict"
+        assert response.json()["message"] == (
+            "Ce fournisseur est lié à 1 transaction et ne peut pas être supprimé."
+        )
+
+    def test_the_transaction_message_is_plural(self, auth_client, owner, site):
+        from apps.stock.services import create_transaction
+
+        supplier = SupplierFactory()
+        for _ in range(2):
+            create_transaction(
+                type="IN",
+                reason="PURCHASE",
+                lines=[
+                    {"article": ArticleFactory(), "quantity": 1, "unit_cost": None}
+                ],
+                user=owner,
+                site=site,
+                supplier=supplier,
+            )
+
+        response = auth_client(owner).delete(detail_url(supplier))
+
+        assert response.json()["message"] == (
+            "Ce fournisseur est lié à 2 transactions et ne peut pas être supprimé."
+        )
+
+    def test_articles_are_reported_before_transactions(self, auth_client, owner, site):
+        """Both guards can trip at once. The article message is the one the
+        user can act on — archive or reassign — so it wins."""
+        from apps.stock.services import create_transaction
+
+        supplier = SupplierFactory()
+        ArticleFactory(supplier=supplier)
+        create_transaction(
+            type="IN",
+            reason="PURCHASE",
+            lines=[{"article": ArticleFactory(), "quantity": 1, "unit_cost": None}],
+            user=owner,
+            site=site,
+            supplier=supplier,
+        )
+
+        response = auth_client(owner).delete(detail_url(supplier))
+
+        assert "article" in response.json()["message"]
+
+
 class TestPermissions:
     @pytest.mark.parametrize("method", ["post", "patch", "delete"])
     def test_a_cashier_may_not_write(self, auth_client, cashier, method):

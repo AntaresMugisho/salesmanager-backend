@@ -2161,3 +2161,32 @@ Things a passing suite does not prove:
 - **`line_count` / `total_quantity` are denormalised** and correct only
   because a transaction is immutable. Any future edit path must recompute
   them.
+
+---
+
+## Follow-ups
+
+Recorded during execution. None blocks merge.
+
+- **`DocumentSequence` is not scoped by site.** `(prefix, year)` is unique, so
+  a genuine multi-site deployment would hand two shops the same
+  `TR-2026-0001`. Harmless under the standing one-Site decision, and the fix
+  is a third column plus a migration — but it is a decision the multi-site
+  migration must not overlook.
+- **Three hand-rolled `get_permissions`.** `MovementViewSet`,
+  `TransactionViewSet` and `UserViewSet` each spell out their own map because
+  none can subclass `CatalogueViewSet` — they use different mixin sets. The
+  read/manager-writes split is now written three times. A small
+  `RoleScopedPermissionMixin` would collapse them, and sub-project 4 will add
+  a fourth.
+- **The transaction list ignores `?ordering=` entirely.** It is fixed to
+  `-createdAt`, matching `listTransactions`, and `AliasedOrderingFilter` is
+  not on the viewset — so an unexpected `?ordering=` is silently dropped
+  rather than 400ing, unlike `/api/articles/`. Same inconsistency as the
+  `UserViewSet` item carried over from sub-project 2.
+- **Creation is serialised by the sequence lock.** Holding it until commit is
+  what makes the numbering gapless, and it is free at one shop's volume. Worth
+  re-examining only if this backend ever serves many sites.
+- **Carried over from sub-project 2, still open:** the stock-status rule has
+  four encodings kept in step only by tests; `low_stock_queryset`'s first `Q`
+  is redundant; `UserViewSet` still uses DRF's `OrderingFilter`.
