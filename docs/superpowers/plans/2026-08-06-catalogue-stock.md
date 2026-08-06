@@ -4294,3 +4294,36 @@ Things worth checking that a passing suite does not prove:
 - **Three copies of the status rule.** `StockLevel.status`, `StockSummarySerializer.get_status` and `ArticleFilterSet.filter_stock_status` all encode the same three inclusive boundaries. They are kept in step only by tests asserting the same boundaries in each. If a fourth copy appears, that is the moment to extract one definition.
 - **`select_for_update` does nothing on SQLite.** Verified during design: `connection.features.has_select_for_update` is `False` and the call neither locks nor raises. Every concurrency claim in `apply_movement` is aspirational until Postgres.
 - **Query-count bounds.** If an implementer raised one of the `django_assert_num_queries` constants, check whether the count grows with page size. Growing with page size means the annotation is not being used and the bound was raised to hide it.
+
+---
+
+## Follow-ups
+
+Recorded during execution. None blocks merge.
+
+- **The status rule now has four encodings**, not the three the plan predicted:
+  `StockLevel.status`, `StockSummarySerializer.get_status`,
+  `ArticleFilterSet.filter_stock_status`, and `low_stock_queryset`'s `Q`
+  form. Nothing keeps them in step but tests asserting the same boundaries in
+  each. A single definition — a `StockStatus` helper taking
+  `(quantity, threshold)` plus one queryset annotation — would collapse all
+  four, and is worth doing before sub-project 6's stock report adds a fifth.
+- **`low_stock_queryset`'s first `Q` is redundant.** `quantity <= 0` is
+  subsumed by `quantity <= threshold`, since both columns are
+  `PositiveIntegerField` and a threshold is never negative. Harmless, and it
+  documents intent, but it is dead SQL.
+- **`UserViewSet` still uses DRF's `OrderingFilter`**, not
+  `AliasedOrderingFilter`. So `/api/users/?ordering=couleur` is silently
+  dropped while `/api/articles/?ordering=couleur` is a 400 — two conventions,
+  which is exactly what the `?isActive=` retrofit existed to avoid. Scoped out
+  of Task 2 deliberately; close it before the frontend starts sorting users.
+- **`DashboardView` issues four separate aggregate queries.** Fine at a
+  single shop's scale, and each is indexed, but the whole payload could be one
+  query with conditional aggregation if the dashboard ever feels slow.
+- **`article_queryset()` calls `Site.objects.current()` when no site is
+  passed.** Two callers pass it; a third that forgets silently pays an extra
+  query rather than failing. Making the argument required would make that
+  impossible to get wrong.
+- **No test asserts the low-stock endpoint's query count.** It shares
+  `article_queryset` with `/api/articles/`, which is covered, so the risk is
+  low — but the `order_by(Case(...))` is unique to it.

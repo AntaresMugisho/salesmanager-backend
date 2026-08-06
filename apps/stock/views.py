@@ -1,15 +1,29 @@
+from django.db.models import (
+    Case,
+    ExpressionWrapper,
+    F,
+    IntegerField,
+    Sum,
+    When,
+)
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, mixins, viewsets
+from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.accounts.models import Site
+from apps.catalogue.querysets import article_queryset
+from apps.catalogue.serializers import ArticleSerializer
+from apps.common.dates import today_start
 from apps.common.filters import CamelCaseQueryParamsMixin
 from apps.common.pagination import StandardPagination
 from apps.common.permissions import IsManagerOrAbove
 from apps.stock.filters import MovementFilterSet
-from apps.stock.models import StockMovement
+from apps.stock.models import StockLevel, StockMovement
 from apps.stock.serializers import MovementCreateSerializer, StockMovementSerializer
+from apps.stock.predicates import low_stock_queryset
 from apps.stock.services import apply_movement
 
 
@@ -57,3 +71,73 @@ class MovementViewSet(
         )
 
         return Response(StockMovementSerializer(movement).data, status=201)
+
+
+class LowStockView(CamelCaseQueryParamsMixin, ListAPIView):
+    serializer_class = ArticleSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = StandardPagination
+    filter_backends = [filters.SearchFilter]
+    search_fields = ["name", "sku"]
+
+    def get_queryset(self):
+        return low_stock_queryset(article_queryset(site=self.site)).order_by(
+            # Ruptures first, then ascending quantity. Not a cover ratio —
+            # there is no consumption-rate data to compute one from.
+            Case(
+                When(stock_quantity__lte=0, then=0),
+                default=1,
+                output_field=IntegerField(),
+            ),
+            "stock_quantity",
+            "name",
+        )
+
+    @property
+    def site(self):
+        if not hasattr(self, "_site"):
+            self._site = Site.objects.current()
+        return self._site
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["site"] = self.site
+        return context
+
+
+class DashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        site = Site.objects.current()
+        articles = article_queryset(site=site)
+
+        # Summed in SQL rather than in Python: the frontend loops over every
+        # level to compute this, which is fine against IndexedDB and is not
+        # fine against a shop with a few thousand articles.
+        #
+        # output_field goes inside ExpressionWrapper, never as an annotate()
+        # kwarg — as a kwarg it would silently create an annotation *named*
+        # `output_field`.
+        stock_value = (
+            StockLevel.objects.filter(site=site)
+            .annotate(
+                value=ExpressionWrapper(
+                    F("quantity") * F("article__purchase_price"),
+                    output_field=IntegerField(),
+                )
+            )
+            .aggregate(total=Sum("value"))["total"]
+            or 0
+        )
+
+        return Response(
+            {
+                "article_count": articles.filter(is_active=True).count(),
+                "stock_value": stock_value,
+                "low_stock_count": low_stock_queryset(articles).count(),
+                "movements_today": StockMovement.objects.filter(
+                    site=site, created_at__gte=today_start()
+                ).count(),
+            }
+        )
