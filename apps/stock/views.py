@@ -20,11 +20,17 @@ from apps.common.dates import today_start
 from apps.common.filters import CamelCaseQueryParamsMixin
 from apps.common.pagination import StandardPagination
 from apps.common.permissions import IsManagerOrAbove
-from apps.stock.filters import MovementFilterSet
-from apps.stock.models import StockLevel, StockMovement
-from apps.stock.serializers import MovementCreateSerializer, StockMovementSerializer
+from apps.stock.filters import MovementFilterSet, TransactionFilterSet
+from apps.stock.models import StockLevel, StockMovement, StockTransaction
+from apps.stock.serializers import (
+    MovementCreateSerializer,
+    StockMovementSerializer,
+    StockTransactionDetailSerializer,
+    StockTransactionSerializer,
+    TransactionCreateSerializer,
+)
 from apps.stock.predicates import low_stock_queryset
-from apps.stock.services import apply_movement
+from apps.stock.services import apply_movement, create_transaction
 
 
 class MovementViewSet(
@@ -141,3 +147,55 @@ class DashboardView(APIView):
                 ).count(),
             }
         )
+
+
+class TransactionViewSet(
+    CamelCaseQueryParamsMixin,
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Create, list and retrieve only.
+
+    A transaction is immutable — correcting one means posting a new,
+    compensating transaction. The absent update and destroy mixins are what
+    make PATCH and DELETE return 405; no explicit handling is needed.
+    """
+
+    pagination_class = StandardPagination
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_class = TransactionFilterSet
+    search_fields = ["reference", "user_reference", "supplier_name", "note"]
+
+    def get_queryset(self):
+        return StockTransaction.objects.select_related("site", "supplier", "user")
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return TransactionCreateSerializer
+        if self.action == "retrieve":
+            return StockTransactionDetailSerializer
+        return StockTransactionSerializer
+
+    def get_permissions(self):
+        classes = [IsManagerOrAbove] if self.action == "create" else [IsAuthenticated]
+        return [permission() for permission in classes]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        header = create_transaction(
+            type=data["type"],
+            reason=data["reason"],
+            lines=data["lines"],
+            user=request.user,
+            site=Site.objects.current(),
+            supplier=data.get("supplier"),
+            user_reference=data.get("reference"),
+            note=data.get("note"),
+        )
+
+        return Response(StockTransactionSerializer(header).data, status=201)

@@ -13,7 +13,9 @@ from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from apps.stock.models import StockLevel, StockMovement
+from apps.common.dates import shop_today
+from apps.common.sequences import next_reference
+from apps.stock.models import StockLevel, StockMovement, StockTransaction
 
 
 def _clean(value: str | None) -> str | None:
@@ -109,3 +111,73 @@ def apply_movement(
         user=user,
         user_name=user.full_name,
     )
+
+
+@transaction.atomic
+def create_transaction(
+    *,
+    type: str,
+    reason: str,
+    lines: list[dict],
+    user,
+    site,
+    supplier=None,
+    user_reference: str | None = None,
+    note: str | None = None,
+) -> StockTransaction:
+    """Write one header plus one movement per line, all or nothing.
+
+    Every line shares the transaction's type and reason — a design decision,
+    not an omission. Mixed-type transactions are out of scope.
+
+    The header is written before the lines because a movement's foreign key
+    needs it; its `total_quantity` is only knowable afterwards, since an
+    ADJUSTMENT line records a derived delta rather than the counted target the
+    client sent.
+
+    Allocation, header, lines and stock levels all share this atomic block, so
+    a line that fails validation rolls back the reference too and the sequence
+    keeps no gap.
+    """
+    cleaned_reference = _clean(user_reference)
+    cleaned_note = _clean(note)
+
+    reference = next_reference("TR", shop_today().year)
+
+    header = StockTransaction.objects.create(
+        reference=reference,
+        site=site,
+        user_reference=cleaned_reference,
+        type=type,
+        reason=reason,
+        supplier=supplier,
+        supplier_name=supplier.name if supplier else None,
+        note=cleaned_note,
+        line_count=len(lines),
+        total_quantity=0,
+        user=user,
+        user_name=user.full_name,
+    )
+
+    total_quantity = 0
+    for index, line in enumerate(lines):
+        movement = apply_movement(
+            article=line["article"],
+            site=site,
+            type=type,
+            reason=reason,
+            quantity=line["quantity"],
+            unit_cost=line.get("unit_cost"),
+            # A line with no delivery-note number of its own is still
+            # traceable to its transaction through the ledger's reference.
+            reference=cleaned_reference or reference,
+            note=cleaned_note,
+            user=user,
+            stock_transaction=header,
+            field_prefix=f"lines.{index}.",
+        )
+        total_quantity += movement.quantity
+
+    header.total_quantity = total_quantity
+    header.save(update_fields=["total_quantity", "updated_at"])
+    return header
