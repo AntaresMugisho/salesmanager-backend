@@ -1,8 +1,15 @@
 from django.db.models import Count
 from django.utils.translation import gettext_lazy as _
 
+from apps.accounts.models import Site
+from apps.catalogue.filters import ArticleFilterSet
 from apps.catalogue.models import Category, Supplier
-from apps.catalogue.serializers import CategorySerializer, SupplierSerializer
+from apps.catalogue.querysets import article_queryset
+from apps.catalogue.serializers import (
+    ArticleSerializer,
+    CategorySerializer,
+    SupplierSerializer,
+)
 from apps.common.exceptions import Conflict
 from apps.common.views import CatalogueViewSet
 
@@ -56,3 +63,28 @@ class SupplierViewSet(CatalogueViewSet):
                 % {"count": used, "plural": "s" if used > 1 else ""}
             )
         instance.delete()
+
+
+class ArticleViewSet(CatalogueViewSet):
+    serializer_class = ArticleSerializer
+    filterset_class = ArticleFilterSet
+    search_fields = ["name", "sku", "barcode"]
+    ordering_fields = ["name", "sku", "created_at", "sale_price"]
+    ordering_aliases = {"stock": "stock_quantity"}
+    ordering = ["name"]
+
+    @property
+    def site(self):
+        # Resolved once per request. The queryset and the serializer context
+        # both need it, and Site.objects.current() is a query each time.
+        if not hasattr(self, "_site"):
+            self._site = Site.objects.current()
+        return self._site
+
+    def get_queryset(self):
+        return article_queryset(site=self.site)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["site"] = self.site
+        return context
