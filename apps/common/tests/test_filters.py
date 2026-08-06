@@ -98,3 +98,89 @@ def test_underscoreize_returns_a_mutable_query_dict():
     result = underscoreize(QueryDict("a=1").copy())
     result.setlist("b", ["2"])  # must not raise
     assert result["b"] == "2"
+
+
+class TestStrictBooleanFilter:
+    """`?isActive=banana` must 400, not read as "no filter".
+
+    The dangerous case is not the typo — it is that a silently-dropped filter
+    returns *more* rows than asked for, looking exactly like a correct
+    unfiltered response.
+    """
+
+    def _filterset(self, value):
+        from django_filters import rest_framework as drf_filters
+
+        from apps.accounts.models import User
+        from apps.common.filters import StrictBooleanFilter
+
+        class Fixture(drf_filters.FilterSet):
+            is_active = StrictBooleanFilter()
+
+            class Meta:
+                model = User
+                fields = ["is_active"]
+
+        return Fixture(data={"is_active": value}, queryset=User.objects.all())
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("true", True),
+            ("TRUE", True),
+            ("True", True),
+            ("1", True),
+            ("false", False),
+            ("FALSE", False),
+            ("0", False),
+        ],
+    )
+    def test_accepts_both_cases_and_both_spellings(self, db, raw, expected):
+        fs = self._filterset(raw)
+        assert fs.is_valid(), fs.errors
+        assert fs.form.cleaned_data["is_active"] is expected
+
+    @pytest.mark.parametrize("raw", ["banana", "yes", "2", "-1", "oui"])
+    def test_rejects_anything_else(self, db, raw):
+        fs = self._filterset(raw)
+        assert not fs.is_valid()
+        assert "is_active" in fs.errors
+
+    def test_an_absent_value_is_not_a_filter(self, db):
+        from django_filters import rest_framework as drf_filters
+
+        from apps.accounts.models import User
+        from apps.common.filters import StrictBooleanFilter
+
+        class Fixture(drf_filters.FilterSet):
+            is_active = StrictBooleanFilter()
+
+            class Meta:
+                model = User
+                fields = ["is_active"]
+
+        fs = Fixture(data={}, queryset=User.objects.all())
+        assert fs.is_valid(), fs.errors
+        assert fs.form.cleaned_data["is_active"] is None
+
+    def test_the_widget_is_overridden_not_just_the_field(self, db):
+        """Regression guard for the exact bug this class exists to avoid.
+
+        `BooleanWidget.value_from_datadict` maps an unknown value to None
+        before `clean()` runs, so a `field_class` override alone silently
+        passes. If someone drops the widget override, this fails.
+        """
+        from django import forms
+        from django_filters.widgets import BooleanWidget
+
+        from apps.common.filters import StrictBooleanFilter
+
+        widget = StrictBooleanFilter().field.widget
+        assert not isinstance(widget, BooleanWidget)
+        assert isinstance(widget, forms.TextInput)
+
+    def test_the_message_is_french(self, db):
+        fs = self._filterset("banana")
+        fs.is_valid()
+        assert "true" in str(fs.errors["is_active"][0])
+        assert "attendu" in str(fs.errors["is_active"][0])

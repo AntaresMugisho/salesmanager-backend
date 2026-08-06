@@ -236,3 +236,32 @@ def test_an_inactive_owner_does_not_count_towards_the_guard(auth_client, site, o
 def test_a_manager_is_not_protected_by_the_guard(auth_client, site, owner):
     target = ManagerFactory()
     assert auth_client(owner).delete(f"{URL}{target.id}/").status_code == 204
+
+
+def test_is_active_filter_still_works(auth_client, owner, db):
+    from apps.accounts.tests.factories import CashierFactory
+
+    CashierFactory(is_active=False)
+    client = auth_client(owner)
+
+    active = client.get("/api/users/?isActive=true")
+    assert active.status_code == 200
+    assert all(row["isActive"] for row in active.json()["results"])
+
+    inactive = client.get("/api/users/?isActive=false")
+    assert inactive.status_code == 200
+    assert inactive.json()["count"] == 1
+    assert not inactive.json()["results"][0]["isActive"]
+
+
+def test_an_unparseable_is_active_is_rejected(auth_client, owner, db):
+    """Closes the follow-up recorded in sub-project 1's plan.
+
+    Before this, `?isActive=banana` returned 200 and every user — a typo read
+    as "no filter", which is indistinguishable from a correct response.
+    """
+    response = auth_client(owner).get("/api/users/?isActive=banana")
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "validation_error"
+    assert "isActive" in response.json()["fieldErrors"]

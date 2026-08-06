@@ -65,8 +65,11 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
+    "django_filters",
     "apps.common",
     "apps.accounts",
+    "apps.catalogue",
+    "apps.stock",
 ]
 
 MIDDLEWARE = [
@@ -125,6 +128,13 @@ USE_I18N = True
 TIME_ZONE = "UTC"
 USE_TZ = True
 
+# Storage stays UTC. This is used *only* to turn a bare calendar date from the
+# client — `dateFrom=2026-07-01`, or "today" on the dashboard — into an
+# instant. Those are local-calendar concepts: the frontend resolved them
+# against the browser's timezone, and a server that resolves them in UTC files
+# a movement made at 00:30 Kinshasa time under the previous day.
+SHOP_TIME_ZONE = str(env("SHOP_TIME_ZONE", "Africa/Kinshasa"))
+
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -143,6 +153,11 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "apps.common.pagination.StandardPagination",
     "PAGE_SIZE": 20,
+    # DRF renders DecimalField as a JSON *string* by default. The frontend's
+    # `vatRate` is typed `number`, and a string there renders NaN in the
+    # article form. Set globally so every future decimal is right by default
+    # rather than needing a per-field flag someone will forget.
+    "COERCE_DECIMAL_TO_STRING": False,
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
 }

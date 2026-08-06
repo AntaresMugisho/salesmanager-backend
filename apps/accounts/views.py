@@ -1,4 +1,5 @@
 from django.utils.translation import gettext_lazy as _
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.generics import RetrieveAPIView
@@ -17,6 +18,7 @@ from apps.accounts.serializers import (
     UserSerializer,
     UserWriteSerializer,
 )
+from apps.accounts.filters import UserFilterSet
 from apps.common.exceptions import Conflict
 from apps.common.filters import CamelCaseQueryParamsMixin
 from apps.common.permissions import IsOwner
@@ -190,21 +192,15 @@ class UserViewSet(CamelCaseQueryParamsMixin, viewsets.ModelViewSet):
     serializer_class = UserWriteSerializer
     permission_classes = [IsAuthenticated, IsOwner]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+    filterset_class = UserFilterSet
     search_fields = ["full_name", "email"]
     ordering_fields = ["full_name", "email", "role", "created_at"]
     ordering = ["full_name"]
-
-    def get_queryset(self):
-        # A small manual filter rather than django-filter: the only
-        # boolean the owner's user-management screen needs to filter on.
-        # `CamelCaseQueryParamsMixin` (mixed in above) already translates
-        # `?isActive=false` to `is_active` before this runs.
-        queryset = super().get_queryset()
-        raw = self.request.query_params.get("is_active")
-        if raw is not None and raw.lower() in ("true", "false"):
-            queryset = queryset.filter(is_active=raw.lower() == "true")
-        return queryset
 
     def perform_update(self, serializer):
         assert_not_last_owner(
