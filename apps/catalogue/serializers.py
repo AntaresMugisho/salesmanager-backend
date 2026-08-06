@@ -1,5 +1,6 @@
 import re
 
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -183,6 +184,25 @@ class ArticleSerializer(serializers.ModelSerializer):
         required=False,
     )
     stock = serializers.SerializerMethodField()
+    # Not Article columns. `initial_quantity` posts an opening movement on
+    # create and is ignored on update; `reorder_threshold` lives on StockLevel.
+    initial_quantity = serializers.IntegerField(
+        min_value=0, write_only=True, required=False, default=0
+    )
+    reorder_threshold = serializers.IntegerField(
+        min_value=0, write_only=True, required=False
+    )
+    barcode = serializers.CharField(
+        max_length=13, required=False, allow_blank=True, allow_null=True
+    )
+    description = serializers.CharField(
+        max_length=500, required=False, allow_blank=True, allow_null=True
+    )
+    vat_rate = serializers.DecimalField(
+        max_digits=5, decimal_places=2, min_value=0, max_value=100
+    )
+
+    BARCODE_PATTERN = re.compile(r"^\d{8}$|^\d{13}$")
 
     class Meta:
         model = Article
@@ -192,6 +212,8 @@ class ArticleSerializer(serializers.ModelSerializer):
             "barcode",
             "name",
             "description",
+            "initial_quantity",
+            "reorder_threshold",
             "category_id",
             "category",
             "supplier_id",
@@ -210,3 +232,121 @@ class ArticleSerializer(serializers.ModelSerializer):
 
     def get_stock(self, obj):
         return StockSummarySerializer(obj, context=self.context).data
+
+    def validate_sku(self, value):
+        sku = value.strip()
+        if not sku:
+            raise serializers.ValidationError(_("La référence est obligatoire."))
+        if len(sku) > 32:
+            raise serializers.ValidationError(
+                _("La référence ne peut pas dépasser 32 caractères.")
+            )
+        existing = Article.objects.filter(sku__iexact=sku)
+        if self.instance is not None:
+            existing = existing.exclude(pk=self.instance.pk)
+        if existing.exists():
+            raise serializers.ValidationError(_("Cette référence est déjà utilisée."))
+        return sku
+
+    def validate_barcode(self, value):
+        if not value or not value.strip():
+            return None
+        barcode = value.strip()
+        if not self.BARCODE_PATTERN.match(barcode):
+            raise serializers.ValidationError(
+                _("Le code-barres doit contenir 8 ou 13 chiffres.")
+            )
+        existing = Article.objects.filter(barcode=barcode)
+        if self.instance is not None:
+            existing = existing.exclude(pk=self.instance.pk)
+        if existing.exists():
+            raise serializers.ValidationError(_("Ce code-barres est déjà utilisé."))
+        return barcode
+
+    def validate_name(self, value):
+        name = value.strip()
+        if len(name) < 2:
+            raise serializers.ValidationError(
+                _("Le nom doit contenir au moins 2 caractères.")
+            )
+        return name
+
+    def validate(self, attrs):
+        if "description" in attrs:
+            value = attrs["description"]
+            attrs["description"] = value.strip() or None if value else None
+
+        # Mirrors the frontend's cross-field refine. Resolved against the
+        # instance on a PATCH that sends only one of the two.
+        purchase = attrs.get(
+            "purchase_price",
+            self.instance.purchase_price if self.instance else 0,
+        )
+        sale = attrs.get("sale_price", self.instance.sale_price if self.instance else 0)
+        if sale < purchase:
+            raise serializers.ValidationError(
+                {
+                    "sale_price": [
+                        _(
+                            "Le prix de vente doit être supérieur ou égal au "
+                            "prix d'achat."
+                        )
+                    ]
+                }
+            )
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        from apps.stock.models import StockLevel, StockMovement
+
+        initial_quantity = validated_data.pop("initial_quantity", 0)
+        reorder_threshold = validated_data.pop("reorder_threshold", 0)
+
+        site = self.context["site"]
+        article = Article.objects.create(**validated_data)
+        StockLevel.objects.create(
+            article=article,
+            site=site,
+            quantity=initial_quantity,
+            reorder_threshold=reorder_threshold,
+        )
+
+        # The article, its level and its opening movement are written
+        # together: a level without a matching ledger entry is a stock figure
+        # nothing accounts for.
+        if initial_quantity > 0:
+            user = self.context["request"].user
+            StockMovement.objects.create(
+                article=article,
+                site=site,
+                type="IN",
+                reason="PURCHASE",
+                quantity=initial_quantity,
+                quantity_before=0,
+                quantity_after=initial_quantity,
+                unit_cost=article.purchase_price,
+                note="Stock initial",
+                user=user,
+                user_name=user.full_name,
+            )
+        return article
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        from apps.stock.models import StockLevel
+
+        # Silently dropped, not rejected: `ArticleUpdateDto` omits it by
+        # design, so a client sending it is sending a field that does not
+        # exist rather than making an error worth reporting.
+        validated_data.pop("initial_quantity", None)
+        reorder_threshold = validated_data.pop("reorder_threshold", None)
+
+        article = super().update(instance, validated_data)
+
+        if reorder_threshold is not None:
+            # Only the threshold. Quantity has exactly one writer.
+            StockLevel.objects.filter(
+                article=article, site=self.context["site"]
+            ).update(reorder_threshold=reorder_threshold)
+        return article

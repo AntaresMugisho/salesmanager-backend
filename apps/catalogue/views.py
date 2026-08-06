@@ -88,3 +88,24 @@ class ArticleViewSet(CatalogueViewSet):
         context = super().get_serializer_context()
         context["site"] = self.site
         return context
+
+    def perform_create(self, serializer):
+        # Re-read through the annotated queryset. `create()` returns a bare
+        # Article, which has no `stock_quantity` attribute, and the response
+        # serializer's `stock` field would raise AttributeError on it.
+        instance = serializer.save()
+        serializer.instance = self.get_queryset().get(pk=instance.pk)
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        serializer.instance = self.get_queryset().get(pk=instance.pk)
+
+    def perform_destroy(self, instance):
+        if instance.movements.exists():
+            raise Conflict(
+                _(
+                    "Cet article possède un historique de mouvements et ne "
+                    "peut pas être supprimé. Vous pouvez l'archiver."
+                )
+            )
+        instance.delete()
