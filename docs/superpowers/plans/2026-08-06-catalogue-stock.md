@@ -220,7 +220,9 @@ place `SHOP_TIME_ZONE` is used, so there is exactly one definition of where a
 day begins.
 """
 
-from datetime import date, datetime, time
+# datetime.UTC, not django.utils.timezone.utc — the Django alias was
+# deprecated in 4.1 and removed in 5.0, and this project is on 6.0.
+from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -234,7 +236,7 @@ def shop_timezone() -> ZoneInfo:
 def start_of_day(value: date) -> datetime:
     """Local midnight on `value`, as an aware UTC datetime."""
     local = datetime.combine(value, time.min, tzinfo=shop_timezone())
-    return local.astimezone(timezone.utc)
+    return local.astimezone(UTC)
 
 
 def end_of_day(value: date) -> datetime:
@@ -245,7 +247,7 @@ def end_of_day(value: date) -> datetime:
     the first microsecond of the following day.
     """
     local = datetime.combine(value, time.max, tzinfo=shop_timezone())
-    return local.astimezone(timezone.utc)
+    return local.astimezone(UTC)
 
 
 def today_start() -> datetime:
