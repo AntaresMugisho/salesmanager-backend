@@ -16,10 +16,7 @@ class StockMovementSerializer(serializers.ModelSerializer):
     # Reads the model's `transaction_id` attname directly; DRF renders a
     # None attribute as null without help.
     transaction_id = serializers.UUIDField(read_only=True)
-    # No column yet. Sub-project 4 adds `sale` and swaps this line. The key
-    # must be present now because the frontend's StockMovement type requires
-    # it.
-    sale_id = serializers.SerializerMethodField()
+    sale_id = serializers.UUIDField(read_only=True)
 
     class Meta:
         model = StockMovement
@@ -42,9 +39,6 @@ class StockMovementSerializer(serializers.ModelSerializer):
             "user_name",
             "created_at",
         ]
-
-    def get_sale_id(self, obj) -> None:
-        return None
 
 
 class MovementCreateSerializer(serializers.Serializer):

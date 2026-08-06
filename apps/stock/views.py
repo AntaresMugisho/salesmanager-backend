@@ -19,7 +19,7 @@ from apps.catalogue.serializers import ArticleSerializer
 from apps.common.dates import today_start
 from apps.common.filters import CamelCaseQueryParamsMixin
 from apps.common.pagination import StandardPagination
-from apps.common.permissions import IsManagerOrAbove
+from apps.common.permissions import IsManagerOrAbove, RoleScopedPermissionMixin
 from apps.stock.filters import MovementFilterSet, TransactionFilterSet
 from apps.stock.models import StockLevel, StockMovement, StockTransaction
 from apps.stock.serializers import (
@@ -34,6 +34,7 @@ from apps.stock.services import apply_movement, create_transaction
 
 
 class MovementViewSet(
+    RoleScopedPermissionMixin,
     CamelCaseQueryParamsMixin,
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
@@ -55,9 +56,7 @@ class MovementViewSet(
             return MovementCreateSerializer
         return StockMovementSerializer
 
-    def get_permissions(self):
-        classes = [IsManagerOrAbove] if self.action == "create" else [IsAuthenticated]
-        return [permission() for permission in classes]
+    permission_map = {"create": IsManagerOrAbove}
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -150,6 +149,7 @@ class DashboardView(APIView):
 
 
 class TransactionViewSet(
+    RoleScopedPermissionMixin,
     CamelCaseQueryParamsMixin,
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
@@ -178,9 +178,7 @@ class TransactionViewSet(
             return StockTransactionDetailSerializer
         return StockTransactionSerializer
 
-    def get_permissions(self):
-        classes = [IsManagerOrAbove] if self.action == "create" else [IsAuthenticated]
-        return [permission() for permission in classes]
+    permission_map = {"create": IsManagerOrAbove}
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

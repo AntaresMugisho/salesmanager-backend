@@ -105,6 +105,17 @@ class StockMovement(UUIDModel):
         blank=True,
         verbose_name=_("transaction"),
     )
+    # Lazy string for the same reason as `transaction` above, one app further
+    # out: apps.sales imports apps.stock, so a real import here would close
+    # the cycle. A movement carries at most one of these two links.
+    sale = models.ForeignKey(
+        "sales.Sale",
+        on_delete=models.PROTECT,
+        related_name="movements",
+        null=True,
+        blank=True,
+        verbose_name=_("vente"),
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="movements"
     )

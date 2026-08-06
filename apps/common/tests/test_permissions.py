@@ -73,3 +73,47 @@ def test_denial_messages_are_french():
 def test_factories_produce_distinct_emails():
     """Later sub-projects create many users per test."""
     assert CashierFactory().email != CashierFactory().email
+
+
+class TestRoleScopedPermissionMixin:
+    """The map is keyed by DRF action name, which is also the method name for
+    a custom @action — so `cancel` and `payments` work the same way."""
+
+    def _view(self, action, permission_map=None, default=None):
+        from apps.common.permissions import RoleScopedPermissionMixin
+
+        class Fixture(RoleScopedPermissionMixin):
+            pass
+
+        Fixture.permission_map = permission_map or {}
+        if default is not None:
+            Fixture.default_permission = default
+
+        view = Fixture()
+        view.action = action
+        return view
+
+    def test_an_unlisted_action_gets_the_default(self):
+        from rest_framework.permissions import IsAuthenticated
+
+        view = self._view("list")
+        assert isinstance(view.get_permissions()[0], IsAuthenticated)
+
+    def test_a_listed_action_gets_its_class(self):
+        from apps.common.permissions import IsOwner
+
+        view = self._view("destroy", {"destroy": IsOwner})
+        assert isinstance(view.get_permissions()[0], IsOwner)
+
+    def test_the_default_can_be_overridden(self):
+        from apps.common.permissions import IsManagerOrAbove
+
+        view = self._view("list", default=IsManagerOrAbove)
+        assert isinstance(view.get_permissions()[0], IsManagerOrAbove)
+
+    def test_it_returns_instances_not_classes(self):
+        """DRF calls has_permission on an instance; returning the class would
+        raise a TypeError at request time, not at import time."""
+        view = self._view("list")
+        permission = view.get_permissions()[0]
+        assert not isinstance(permission, type)

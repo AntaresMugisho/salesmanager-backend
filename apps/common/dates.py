@@ -50,6 +50,18 @@ def shop_today() -> date:
     return timezone.now().astimezone(shop_timezone()).date()
 
 
+def at_local_noon(value: date) -> datetime:
+    """Local noon on `value`, as an aware UTC datetime.
+
+    A payment's `paidAt` arrives as a bare calendar date from a picker. Noon
+    rather than midnight because midnight sits on a day boundary: shifted by
+    any timezone offset it lands on the adjacent day, while noon stays on the
+    day the user picked whatever the offset.
+    """
+    local = datetime.combine(value, time(12, 0), tzinfo=shop_timezone())
+    return local.astimezone(UTC)
+
+
 def today_start() -> datetime:
     """Local midnight of the shop's current day, as an aware UTC datetime."""
     return start_of_day(shop_today())

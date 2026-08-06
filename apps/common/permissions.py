@@ -10,7 +10,11 @@ lands.
 """
 
 from django.utils.translation import gettext_lazy as _
-from rest_framework.permissions import SAFE_METHODS, BasePermission
+from rest_framework.permissions import (
+    SAFE_METHODS,
+    BasePermission,
+    IsAuthenticated,
+)
 
 
 def _active(request) -> bool:
@@ -43,3 +47,27 @@ class ReadOnlyForCashier(BasePermission):
         if request.method in SAFE_METHODS:
             return True
         return request.user.is_manager_or_above
+
+
+class RoleScopedPermissionMixin:
+    """Declarative per-action permissions.
+
+    `permission_map` maps a DRF action name — `create`, `destroy`, or a custom
+    `@action`'s method name — to a permission class. Anything unlisted falls
+    back to `default_permission`.
+
+    Exists because the same read/manager-writes/owner-deletes map was written
+    out in three viewsets and sales would have made five. A permission rule
+    living in five places is one that will eventually be wrong in one of them,
+    and the failure — a cashier cancelling a sale — is silent until someone
+    tries it.
+    """
+
+    permission_map: dict[str, type] = {}
+    default_permission: type = IsAuthenticated
+
+    def get_permissions(self):
+        permission_class = self.permission_map.get(
+            self.action, self.default_permission
+        )
+        return [permission_class()]

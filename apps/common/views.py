@@ -9,30 +9,37 @@ an article — is silent until someone tries it.
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, viewsets
-from rest_framework.permissions import IsAuthenticated
 
 from apps.common.filters import AliasedOrderingFilter, CamelCaseQueryParamsMixin
 from apps.common.pagination import StandardPagination
-from apps.common.permissions import IsManagerOrAbove, IsOwner
+from apps.common.permissions import (
+    IsManagerOrAbove,
+    IsOwner,
+    RoleScopedPermissionMixin,
+)
 
 
-class CatalogueViewSet(CamelCaseQueryParamsMixin, viewsets.ModelViewSet):
+class CatalogueViewSet(
+    RoleScopedPermissionMixin, CamelCaseQueryParamsMixin, viewsets.ModelViewSet
+):
     """Read for anyone authenticated, write for manager and above, delete for
     the owner.
 
     Subclasses set `queryset` and `serializer_class`, and may set
     `search_fields`, `ordering_fields`, `ordering_aliases` and
-    `filterset_class`.
+    `filterset_class`. A subclass needing a different map overrides
+    `permission_map` rather than `get_permissions`.
     """
 
     pagination_class = StandardPagination
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, AliasedOrderingFilter]
 
-    def get_permissions(self):
-        if self.action == "destroy":
-            classes = [IsOwner]
-        elif self.request.method in ("POST", "PUT", "PATCH"):
-            classes = [IsManagerOrAbove]
-        else:
-            classes = [IsAuthenticated]
-        return [permission() for permission in classes]
+    # `create`, `update` and `partial_update` are the only ModelViewSet actions
+    # reached by POST/PUT/PATCH, so this is exactly the method-based rule it
+    # replaces — stated as actions, which is what DRF dispatches on.
+    permission_map = {
+        "create": IsManagerOrAbove,
+        "update": IsManagerOrAbove,
+        "partial_update": IsManagerOrAbove,
+        "destroy": IsOwner,
+    }

@@ -21,7 +21,7 @@ from apps.accounts.serializers import (
 from apps.accounts.filters import UserFilterSet
 from apps.common.exceptions import Conflict
 from apps.common.filters import CamelCaseQueryParamsMixin
-from apps.common.permissions import IsOwner
+from apps.common.permissions import IsOwner, RoleScopedPermissionMixin
 
 
 def _session_payload(user) -> dict:
@@ -187,10 +187,15 @@ def assert_not_last_owner(user, *, new_role=None, new_is_active=None) -> None:
         )
 
 
-class UserViewSet(CamelCaseQueryParamsMixin, viewsets.ModelViewSet):
+class UserViewSet(
+    RoleScopedPermissionMixin, CamelCaseQueryParamsMixin, viewsets.ModelViewSet
+):
     queryset = User.objects.all()
     serializer_class = UserWriteSerializer
-    permission_classes = [IsAuthenticated, IsOwner]
+    # Owner-only for every action, reads included — not the catalogue map.
+    # IsOwner's own _active() check already rejects an unauthenticated or
+    # inactive user, so dropping IsAuthenticated changes nothing.
+    default_permission = IsOwner
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     filter_backends = [
         DjangoFilterBackend,
