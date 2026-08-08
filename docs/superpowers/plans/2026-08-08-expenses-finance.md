@@ -2542,3 +2542,41 @@ Things a passing suite does not prove:
   changes.
 - **Query-count bound.** If it was raised, confirm it does not grow with the
   number of sales.
+
+---
+
+## Follow-ups
+
+Recorded during execution. None blocks merge.
+
+- **`aggregate.py` was written before its test file.** The same slip as
+  sub-project 4's tasks 8–10: the red-green cycle was not observed. Rather
+  than leave that as a claim, the implementation was mutated four ways and
+  each mutation confirmed to fail a test — `round()` on `margin_rate`,
+  dropping the `max(...,0)` floor on receivables, letting receipts ignore the
+  range, and dropping the top-5 cap. The third was caught **only** by the Node
+  comparison, which is the strongest single argument for keeping that test.
+  Task 4 was done test-first and its 36 tests were seen red.
+- **The `-p no:warnings` habit is now a known hazard.** It hid
+  `UnorderedObjectListWarning` through all of sub-project 4. Nothing in this
+  sub-project paginates an annotated queryset, so there was nothing to hide —
+  but the flag is still on every focused run. Worth a `filterwarnings = error`
+  entry in `pytest.ini` for the specific DRF warnings that indicate bugs,
+  rather than suppressing the lot.
+- **`load_facts` reads the whole sales table on every finance request.** Named
+  in the spec as the known scale limit; repeating it here because the fix is
+  easy to get wrong. Range-filtering that queryset is the *obvious* change and
+  the *wrong* one: `receivables` and `unpaid_sales` would silently become
+  period figures with no payload key changing. The correct fix is to replace
+  those two folds with `aggregate()` calls and leave the queryset unbounded.
+- **The two Node comparisons are the load-bearing tests** and they skip
+  silently where `node` is absent. A CI box without it keeps a green suite
+  while losing the only check that the labels and the arithmetic match the
+  frontend. Worth failing rather than skipping in CI specifically.
+- **`facts.py` has no test of its own.** It is covered only through the three
+  endpoints. That is adequate — its whole job is projection — but a direct
+  test of the five shapes would catch a renamed field faster than an endpoint
+  test does.
+- **Carried over and still open:** the stock-status rule has four encodings;
+  `DocumentSequence` is not scoped by site; `UserViewSet` uses DRF's
+  `OrderingFilter` while articles use the strict one.

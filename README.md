@@ -56,6 +56,8 @@ Toutes les routes exigent une authentification. Le slash final est
 | `/api/sales/{id}/` | GET | — |
 | `/api/sales/{id}/cancel/` | POST | gérant |
 | `/api/sales/{id}/payments/` | POST | tous, caissier compris |
+| `/api/expenses/` `…/{id}/` | GET POST PATCH DELETE | gérant |
+| `/api/finance/summary/` `series/` `breakdown/` | GET | gérant |
 
 Il n'y a pas de route d'archivage : `archiveArticle` côté frontend est un
 `PATCH { isActive: false }`.
@@ -118,6 +120,30 @@ au sous-projet 6 de calculer une marge historique juste.
 
 Les caissiers enregistrent les ventes et les encaissements : c'est la caisse.
 Ils n'annulent pas.
+
+## Charges et finances
+
+Les trois lectures financières prennent un `from` et un `to` **obligatoires**
+(bornes incluses) et renvoient des chiffres finis : le frontend ne fait plus
+aucun calcul.
+
+Trois points que l'on lit souvent de travers :
+
+- **`receivables` et la liste des impayés ignorent la période.** Ce sont des
+  chiffres « à ce jour », pas des chiffres de la période.
+- **Un encaissement sur une vente annulée par la suite reste un
+  encaissement.** L'argent a bel et bien été reçu ; l'annulation rend le
+  stock, pas la monnaie.
+- **La courbe de trésorerie cumulée repart de zéro** au premier point de la
+  période. Elle répond à « qu'est-ce que cette période a fait à ma
+  trésorerie », pas à « combien y a-t-il en caisse ».
+
+Les libellés des points (« 12 juil. », « juil. 2026 ») proviennent d'une table
+figée, transcrite depuis l'`Intl` du frontend : la locale française de Django
+écrit « jan. » et « fév. » là où le contrat attend « janv. » et « févr. ».
+
+Une charge est modifiable et supprimable, contrairement à une vente : rien ne
+la référence, et c'est un relevé interne, pas un document remis à quelqu'un.
 
 ## Fuseau horaire
 
