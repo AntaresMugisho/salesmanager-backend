@@ -18,7 +18,10 @@ class CategoryViewSet(CatalogueViewSet):
     serializer_class = CategorySerializer
     search_fields = ["name", "description"]
     ordering_fields = ["name", "article_count"]
-    ordering = ["name"]
+    # `ordering` must name the column directly: DRF resolves aliases only on
+    # the ?ordering= path, and returns the default untouched otherwise.
+    ordering_aliases = {"name": "name_sort"}
+    ordering = ["name_sort"]
 
     def get_queryset(self):
         # Annotated rather than counted per row: a page of 20 categories would
@@ -50,7 +53,8 @@ class SupplierViewSet(CatalogueViewSet):
     serializer_class = SupplierSerializer
     search_fields = ["name", "contact_name", "email", "phone"]
     ordering_fields = ["name", "created_at"]
-    ordering = ["name"]
+    ordering_aliases = {"name": "name_sort"}
+    ordering = ["name_sort"]
 
     def perform_destroy(self, instance):
         used = instance.articles.count()
@@ -83,8 +87,8 @@ class ArticleViewSet(CatalogueViewSet):
     filterset_class = ArticleFilterSet
     search_fields = ["name", "sku", "barcode"]
     ordering_fields = ["name", "sku", "created_at", "sale_price"]
-    ordering_aliases = {"stock": "stock_quantity"}
-    ordering = ["name"]
+    ordering_aliases = {"stock": "stock_quantity", "name": "name_sort"}
+    ordering = ["name_sort"]
 
     @property
     def site(self):
