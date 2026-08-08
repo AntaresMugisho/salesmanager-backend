@@ -402,9 +402,13 @@ filterwarnings =
 ```
 
 The class lives in **`django.core.paginator`**, not in `rest_framework` — DRF's
-paginator delegates to Django's `Paginator`, which is what emits it. Confirmed
-by import: `rest_framework.pagination.UnorderedObjectListWarning` does not
-exist and would make the `filterwarnings` line a silent no-op.
+paginator delegates to Django's `Paginator`, which is what emits it.
+`rest_framework.pagination.UnorderedObjectListWarning` does not exist.
+
+Measured rather than assumed: naming the DRF path does **not** produce a silent
+no-op, as first supposed. pytest imports the category before Django is
+configured, so the suite dies at collection with `ImproperlyConfigured` — loud,
+immediate, and nothing to do with pagination.
 
 (Note for the record: this warning was never suppressed by `pytest.ini`, whose
 `addopts` is only `-q --strict-markers`. It was hidden by a `-p no:warnings`

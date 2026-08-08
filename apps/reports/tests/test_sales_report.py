@@ -67,7 +67,7 @@ class TestTotals:
 
         totals = build_sales_report(given, KINSHASA, *JULY, GENERATED_AT)["totals"]
 
-        assert totals["revenue_ht"] == expected["revenue"]
+        assert totals["revenueHT"] == expected["revenue"]
         assert totals["vat_collected"] == expected["vat_collected"]
         assert totals["receipts"] == expected["receipts"]
         assert totals["receivables"] == expected["receivables"]
@@ -221,6 +221,29 @@ class TestTheEndpoint:
         response = auth_client(manager).get(URL)
         assert response.status_code == 400
         assert set(response.json()["fieldErrors"]) == {"from", "to"}
+
+    def test_the_totals_keys_match_the_contract_exactly(
+        self, auth_client, manager, site
+    ):
+        """`revenueHT`, not `revenueHt`.
+
+        The renderer camelises snake_case, which turns revenue_ht into
+        revenueHt — and `SalesReportTotals.revenueHT` on the frontend then
+        reads undefined and the document prints a blank cell. Caught on the
+        wire, not by a unit test, because the builder's own key is internal.
+        """
+        body = auth_client(manager).get(URL, PARAMS).json()
+
+        assert set(body["totals"]) == {
+            "invoiceCount",
+            "cancelledCount",
+            "totalTtc",
+            "revenueHT",
+            "vatCollected",
+            "discounts",
+            "receipts",
+            "receivables",
+        }
 
     def test_an_empty_period_is_zeroed_not_a_404(self, auth_client, manager, site):
         response = auth_client(manager).get(URL, PARAMS)

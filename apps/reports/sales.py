@@ -84,7 +84,13 @@ def build_sales_report(
             "invoice_count": len(completed),
             "cancelled_count": len(in_period) - len(completed),
             "total_ttc": sum(sale["total"] for sale in completed),
-            "revenue_ht": summary["revenue"],
+            # Already camelCase, deliberately. The contract spells this
+            # `revenueHT`, and the renderer's snake_case conversion produces
+            # `revenueHt` — which the document reads as undefined. A key with
+            # no underscore passes through camelize() untouched, so naming it
+            # here is what puts the right spelling on the wire.
+            # `totalTtc` above is genuinely lower-case in the contract.
+            "revenueHT": summary["revenue"],
             "vat_collected": summary["vat_collected"],
             "discounts": sum(sale["discount"] for sale in completed),
             "receipts": summary["receipts"],

@@ -58,6 +58,10 @@ Toutes les routes exigent une authentification. Le slash final est
 | `/api/sales/{id}/payments/` | POST | tous, caissier compris |
 | `/api/expenses/` `…/{id}/` | GET POST PATCH DELETE | gérant |
 | `/api/finance/summary/` `series/` `breakdown/` | GET | gérant |
+| `/api/reports/result/` | GET | gérant |
+| `/api/reports/sales/` | GET | gérant |
+| `/api/reports/profitability/` | GET | gérant |
+| `/api/reports/stock/` | GET | gérant |
 
 Il n'y a pas de route d'archivage : `archiveArticle` côté frontend est un
 `PATCH { isActive: false }`.
@@ -144,6 +148,44 @@ figée, transcrite depuis l'`Intl` du frontend : la locale française de Django
 
 Une charge est modifiable et supprimable, contrairement à une vente : rien ne
 la référence, et c'est un relevé interne, pas un document remis à quelqu'un.
+
+## Rapports
+
+Quatre documents imprimables, mêmes bornes `from`/`to` que les lectures
+financières, mêmes messages d'erreur : `parse_range` est partagé.
+
+Chaque réponse porte un bloc `meta` avec la période demandée et un
+`generatedAt`. L'en-tête et les chiffres viennent donc de la même réponse : un
+document ne peut pas imprimer une période que ses chiffres ne couvrent pas.
+
+Quatre points qui surprennent à la lecture du code :
+
+- **Le compte de résultat ne recalcule rien.** Il appelle `summarise()` et
+  `build_expense_breakdown()` d'`apps.finance`. C'est aussi vrai des quatre
+  chiffres que le rapport des ventes partage avec lui et des fonctions par
+  ligne du rapport de rentabilité. Les trois documents et `/finances` ne
+  peuvent donc pas se contredire sur une même période — des tests le
+  vérifient de bout en bout, pas contre des constantes.
+- **Le rapport de stock porte deux dates.** `categories` et `stockTotals`
+  décrivent le stock à `generatedAt` ; tout le reste couvre `range`. Un
+  intervalle situé en 1999 renvoie quand même le stock d'aujourd'hui.
+- **Un achat sans coût unitaire compte pour zéro**, jamais au prix du jour :
+  le valoriser au prix actuel réécrirait ce que la période a réellement
+  coûté. `withoutCostCount` garde l'omission visible.
+- **Le nom et la référence d'un article viennent de l'instantané de la ligne
+  de vente**, jamais du catalogue. Renommer un article ne réécrit pas ce
+  qu'une période passée dit avoir vendu. Le catalogue ne sert qu'à retrouver
+  la catégorie.
+
+Le tri français passe par `apps/common/collation.py` : NFKD, marques
+diacritiques retirées, casse repliée, plus une table de ligatures — Unicode ne
+décompose pas « Œ », donc sans elle « Œufs » se classe après « Zeste ». Les
+noms qui ne diffèrent que par un accent, une casse ou une ligature sont
+départagés par l'identifiant, pas comme ICU ; c'est une limite documentée.
+
+Le journal des mouvements n'est pas paginé : le contrat ne le prévoit pas et
+un rapport est un document. Sur une longue période et une boutique active, la
+réponse peut être volumineuse.
 
 ## Fuseau horaire
 
