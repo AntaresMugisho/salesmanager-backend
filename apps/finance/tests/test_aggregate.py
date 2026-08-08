@@ -23,7 +23,7 @@ from apps.finance.aggregate import (
     paid_by_sale,
     summarise,
 )
-from apps.finance.tests.test_period import django_imports_of
+from apps.common.tests.purity import django_imports_of
 
 KINSHASA = ZoneInfo("Africa/Kinshasa")
 JULY = (date(2026, 7, 1), date(2026, 7, 31))

@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from apps.common.tests.purity import django_imports_of
 from apps.finance.period import (
     DAILY_BUCKET_LIMIT,
     MONTH_ABBREVIATIONS,
@@ -26,28 +27,6 @@ from apps.finance.period import (
 )
 
 KINSHASA = ZoneInfo("Africa/Kinshasa")
-
-
-def django_imports_of(module) -> list[str]:
-    """Every module this file imports whose root package is `django`.
-
-    Parsed from the AST rather than grepped: the docstrings here talk about
-    Django at length, and a substring search would flag the very comment
-    explaining that there is no import.
-    """
-    import ast
-    import inspect
-
-    tree = ast.parse(inspect.getsource(module))
-    found = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            found += [a.name for a in node.names if a.name.split(".")[0] == "django"]
-        elif isinstance(node, ast.ImportFrom):
-            root = (node.module or "").split(".")[0]
-            if root == "django":
-                found.append(node.module)
-    return found
 
 
 class TestNoDjangoImport:
