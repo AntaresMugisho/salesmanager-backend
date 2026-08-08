@@ -8,6 +8,7 @@ from apps.common.permissions import IsManagerOrAbove
 from apps.finance.facts import load_facts
 from apps.finance.serializers import parse_range
 from apps.reports.result import build_result_report
+from apps.reports.sales import build_sales_report
 
 
 class ReportReadView(APIView):
@@ -41,3 +42,8 @@ class ReportReadView(APIView):
 class ResultReportView(ReportReadView):
     def build(self, site, tz, start, end, generated_at) -> dict:
         return build_result_report(load_facts(site), tz, start, end, generated_at)
+
+
+class SalesReportView(ReportReadView):
+    def build(self, site, tz, start, end, generated_at) -> dict:
+        return build_sales_report(load_facts(site), tz, start, end, generated_at)
