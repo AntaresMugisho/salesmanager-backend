@@ -7,6 +7,8 @@ from apps.common.dates import shop_timezone
 from apps.common.permissions import IsManagerOrAbove
 from apps.finance.facts import load_facts
 from apps.finance.serializers import parse_range
+from apps.reports.facts import load_report_facts
+from apps.reports.profitability import build_profitability_report
 from apps.reports.result import build_result_report
 from apps.reports.sales import build_sales_report
 
@@ -47,3 +49,15 @@ class ResultReportView(ReportReadView):
 class SalesReportView(ReportReadView):
     def build(self, site, tz, start, end, generated_at) -> dict:
         return build_sales_report(load_facts(site), tz, start, end, generated_at)
+
+
+class ProfitabilityReportView(ReportReadView):
+    def build(self, site, tz, start, end, generated_at) -> dict:
+        return build_profitability_report(
+            load_facts(site),
+            load_report_facts(site)["catalogue"],
+            tz,
+            start,
+            end,
+            generated_at,
+        )
