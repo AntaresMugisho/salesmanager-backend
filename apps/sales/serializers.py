@@ -1,30 +1,28 @@
 import re
-import unicodedata
 
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.catalogue.models import Article
+from apps.common.collation import collation_key
 from apps.sales.models import Customer, Payment, Sale, SaleLine
+from apps.sales.totals import compute_balance
 
 PHONE_PATTERN = re.compile(r"^[\d\s+().-]{6,20}$")
 
 
 def french_sort_key(value: str) -> tuple[str, str]:
-    """Approximate `localeCompare(fr-FR)` for sorting article names.
+    """Sort invoice lines by article name, the way a French reader expects.
 
-    Python's default sort is by code point, which puts « Épicerie » after
-    « Zzz » because É is U+00C9. Stripping accents via NFKD puts it back
-    beside « E », which is what a French reader expects.
+    Delegates to `apps.common.collation.collation_key`. This used to carry its
+    own NFKD implementation, which had no ligature table and therefore sorted
+    « Œufs » after « Zeste » on a printed invoice — Unicode gives Œ no
+    compatibility decomposition, so NFKD alone does not touch it.
 
-    An approximation, deliberately: it does not implement CLDR tailoring, and
-    names differing only by accent fall back to their original form. Full
-    collation would mean PyICU, which is not worth a dependency for invoice
-    line order.
+    The original value is kept as a secondary key so names that differ only by
+    accent or case still order deterministically rather than by chance.
     """
-    decomposed = unicodedata.normalize("NFKD", value)
-    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
-    return (stripped.casefold(), value)
+    return (collation_key(value), value)
 
 
 class CustomerSerializer(serializers.ModelSerializer):
@@ -217,12 +215,9 @@ class SaleSerializer(serializers.ModelSerializer):
         return CustomerRefSerializer(obj).data
 
     def get_balance(self, obj) -> int:
-        # Zero on a cancelled sale, whatever was paid before: nothing is owed
-        # on one, and money already received is a refund rather than a debt.
-        # Floored at zero otherwise, so an overpayment never reads as negative.
-        if obj.status == Sale.Status.CANCELLED:
-            return 0
-        return max(obj.total - obj.paid_amount, 0)
+        # The rule lives in `apps.sales.totals` so the sale detail and the
+        # sales report cannot drift apart.
+        return compute_balance(obj.total, obj.paid_amount, obj.status)
 
     def get_payment_status(self, obj) -> str:
         if obj.paid_amount <= 0:

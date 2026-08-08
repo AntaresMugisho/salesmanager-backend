@@ -248,3 +248,114 @@ class TestAgainstTheFrontendImplementation:
             assert [row.vat_amount for row in got.lines] == [
                 row["vatAmount"] for row in want["lines"]
             ]
+
+
+from apps.sales.totals import compute_balance, group_vat_by_rate  # noqa: E402
+
+
+class TestComputeBalance:
+    """The rule was inline in `SaleSerializer.get_balance`; the sales report
+    needs it too, and two copies of it would drift."""
+
+    def test_nothing_paid_leaves_the_whole_total(self):
+        assert compute_balance(10_000, 0, "COMPLETED") == 10_000
+
+    def test_partly_paid_leaves_the_remainder(self):
+        assert compute_balance(10_000, 4_000, "COMPLETED") == 6_000
+
+    def test_fully_paid_leaves_zero(self):
+        assert compute_balance(10_000, 10_000, "COMPLETED") == 0
+
+    def test_an_overpayment_never_reads_as_negative(self):
+        assert compute_balance(10_000, 12_000, "COMPLETED") == 0
+
+    def test_a_cancelled_sale_owes_nothing(self):
+        assert compute_balance(10_000, 0, "CANCELLED") == 0
+
+    def test_a_cancelled_sale_owes_nothing_even_when_partly_paid(self):
+        # The cash moved and there is no refund entity to undo it, but nothing
+        # is owed — so an unpaid cancelled invoice must not print a balance.
+        assert compute_balance(10_000, 3_000, "CANCELLED") == 0
+
+
+def vat_line(rate, vat_amount, line_total, discount_share=0):
+    return {
+        "vat_rate": Decimal(str(rate)),
+        "vat_amount": vat_amount,
+        "line_total": line_total,
+        "discount_share": discount_share,
+    }
+
+
+class TestGroupVatByRate:
+    def test_a_single_rate_still_gets_a_row(self):
+        # An invoice always shows the breakdown: a document that hides it is
+        # not a tax document.
+        rows = group_vat_by_rate([vat_line(16, 1_600, 11_600)])
+        assert rows == [
+            {
+                "vat_rate": Decimal("16"),
+                "base": 10_000,
+                "vat_amount": 1_600,
+                "total": 11_600,
+            }
+        ]
+
+    def test_lines_at_one_rate_are_summed(self):
+        rows = group_vat_by_rate(
+            [vat_line(16, 1_600, 11_600), vat_line(16, 800, 5_800)]
+        )
+        assert len(rows) == 1
+        assert rows[0]["vat_amount"] == 2_400
+        assert rows[0]["total"] == 17_400
+        assert rows[0]["base"] == 15_000
+
+    def test_the_discount_share_comes_off_the_total(self):
+        rows = group_vat_by_rate([vat_line(16, 1_600, 11_600, discount_share=600)])
+        assert rows[0]["total"] == 11_000
+        assert rows[0]["base"] == 9_400
+
+    def test_rates_are_ascending(self):
+        rows = group_vat_by_rate([vat_line(16, 1_600, 11_600), vat_line(0, 0, 5_000)])
+        assert [row["vat_rate"] for row in rows] == [Decimal("0"), Decimal("16")]
+
+    def test_equal_decimal_rates_group_together(self):
+        # Decimal("16.00") == Decimal("16.0") and the two hash alike, so a
+        # column with decimal_places=2 cannot split one rate across two rows.
+        rows = group_vat_by_rate(
+            [vat_line("16.00", 1_600, 11_600), vat_line("16.0", 800, 5_800)]
+        )
+        assert len(rows) == 1
+
+    def test_no_lines_is_no_rows(self):
+        assert group_vat_by_rate([]) == []
+
+
+class TestFrenchSortKey:
+    """`french_sort_key` orders invoice lines; it now shares one collation.
+
+    It carried its own NFKD implementation with no ligature table, so an
+    invoice listing « Œufs » printed it after « Zeste ».
+    """
+
+    def test_accents_sort_where_a_french_reader_expects(self):
+        from apps.sales.serializers import french_sort_key
+
+        names = ["Zeste", "Épicerie", "Fruits"]
+        assert sorted(names, key=french_sort_key) == ["Épicerie", "Fruits", "Zeste"]
+
+    def test_the_oe_ligature_no_longer_sorts_last(self):
+        from apps.sales.serializers import french_sort_key
+
+        names = ["Zeste", "Œufs", "Oignons", "Fruits"]
+        assert sorted(names, key=french_sort_key) == [
+            "Fruits",
+            "Œufs",
+            "Oignons",
+            "Zeste",
+        ]
+
+    def test_names_differing_only_by_accent_are_deterministic(self):
+        from apps.sales.serializers import french_sort_key
+
+        assert sorted(["Café", "Cafe"], key=french_sort_key) == ["Cafe", "Café"]

@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from apps.accounts.models import Site
 from apps.catalogue.models import Article, Supplier
 from apps.common.models import UUIDModel
+from apps.stock.status import derive_stock_status
 
 
 class StockLevel(UUIDModel):
@@ -45,17 +46,14 @@ class StockLevel(UUIDModel):
 
     @property
     def status(self) -> str:
-        """Mirrors `deriveStatus` in the frontend's `lib/service-utils.ts`.
+        """Delegates to the canonical rule in `apps.stock.status`.
 
-        Both comparisons are inclusive. `ArticleFilterSet` derives the same
-        three buckets in SQL; if you change one, change both, or the
-        low-stock list and the article filter start disagreeing.
+        `ArticleFilterSet` and `article_queryset` derive the same three buckets
+        in SQL and cannot call a Python function; if you change the rule,
+        change those too, or the low-stock list and the article filter start
+        disagreeing.
         """
-        if self.quantity <= 0:
-            return "OUT_OF_STOCK"
-        if self.quantity <= self.reorder_threshold:
-            return "LOW"
-        return "IN_STOCK"
+        return derive_stock_status(self.quantity, self.reorder_threshold)
 
 
 class StockMovement(UUIDModel):

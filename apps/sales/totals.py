@@ -132,3 +132,43 @@ def compute_sale_totals(lines: list[LineInput], discount: int) -> SaleTotals:
         vat_total=sum(line.vat_amount for line in result_lines),
         lines=result_lines,
     )
+
+
+#: Compared as a literal because this module imports no Django, so it cannot
+#: reference `Sale.Status.CANCELLED`. The two must stay in step.
+CANCELLED = "CANCELLED"
+
+
+def compute_balance(total: int, paid_amount: int, status: str) -> int:
+    """What is still owed on a sale.
+
+    Zero on a cancelled sale whatever was paid on it: money already received is
+    a refund to settle, not a debt. Floored at zero otherwise, so an
+    overpayment never reads as negative.
+    """
+    if status == CANCELLED:
+        return 0
+    return max(total - paid_amount, 0)
+
+
+def group_vat_by_rate(lines: list[dict]) -> list[dict]:
+    """One row per VAT rate, ascending.
+
+    `total` is what was actually charged at that rate — the line total less its
+    share of the sale's discount — and `base` is that figure less the tax.
+    """
+    by_rate: dict = {}
+    for line in lines:
+        entry = by_rate.setdefault(line["vat_rate"], {"vat_amount": 0, "total": 0})
+        entry["vat_amount"] += line["vat_amount"]
+        entry["total"] += line["line_total"] - line["discount_share"]
+
+    return [
+        {
+            "vat_rate": rate,
+            "base": entry["total"] - entry["vat_amount"],
+            "vat_amount": entry["vat_amount"],
+            "total": entry["total"],
+        }
+        for rate, entry in sorted(by_rate.items())
+    ]
