@@ -35,6 +35,7 @@ def apply_movement(
     reference: str | None = None,
     note: str | None = None,
     stock_transaction=None,
+    sale=None,
     field_prefix: str = "",
 ) -> StockMovement:
     """Post one movement and update the level it applies to.
@@ -46,6 +47,10 @@ def apply_movement(
     Named `stock_transaction` rather than `transaction` because that name is
     bound to `django.db.transaction` in this module — shadowing it inside the
     function that opens the atomic block is how a subtle bug gets written.
+
+    `sale` does the same for a sale's lines. A movement carries at most one of
+    the two, and this is the third and final caller of the single writer:
+    neither sales nor transactions grow their own way to change a quantity.
 
     `field_prefix` routes validation errors to a form row: passing
     `"lines.2."` produces the key `lines.2.quantity`, which is
@@ -108,6 +113,7 @@ def apply_movement(
         reference=_clean(reference),
         note=_clean(note),
         transaction=stock_transaction,
+        sale=sale,
         user=user,
         user_name=user.full_name,
     )

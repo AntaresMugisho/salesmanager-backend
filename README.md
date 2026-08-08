@@ -51,6 +51,11 @@ Toutes les routes exigent une authentification. Le slash final est
 | `/api/stock/transactions/{id}/` | GET | — |
 | `/api/stock/low-stock/` | GET | — |
 | `/api/stock/dashboard/` | GET | — |
+| `/api/customers/` `…/{id}/` | GET POST PATCH DELETE | gérant · DELETE propriétaire |
+| `/api/sales/` | GET, POST | tous, caissier compris |
+| `/api/sales/{id}/` | GET | — |
+| `/api/sales/{id}/cancel/` | POST | gérant |
+| `/api/sales/{id}/payments/` | POST | tous, caissier compris |
 
 Il n'y a pas de route d'archivage : `archiveArticle` côté frontend est un
 `PATCH { isActive: false }`.
@@ -81,6 +86,38 @@ La séquence repart à `0001` à chaque année civile, dans `SHOP_TIME_ZONE`. El
 est allouée à l'intérieur de la transaction de base de données : une écriture
 refusée annule aussi l'incrément, et **ne laisse donc aucun trou** dans la
 numérotation.
+
+## Ventes
+
+Une vente **est** la facture : sa `reference` est le numéro `FA-YYYY-NNNN`,
+alloué depuis la même séquence annuelle que les `TR-` des transactions. Une
+vente refusée n'y laisse aucun trou.
+
+Elle est immuable, à une exception près : l'**annulation**. Celle-ci ne
+supprime aucun mouvement — le stock est rendu par un mouvement compensatoire
+`IN` / `RETURN` portant la même vente, ce qui permet au journal d'afficher les
+deux moitiés. **L'argent déjà encaissé n'est pas remboursé** ici ; le frontend
+l'affiche comme « Remboursement dû ».
+
+Trois champs ne sont **jamais stockés** et sont recalculés à chaque lecture :
+
+| champ | règle |
+|---|---|
+| `paidAmount` | somme des paiements |
+| `balance` | 0 si la vente est annulée, sinon `total − paidAmount`, plancher à 0 |
+| `paymentStatus` | `UNPAID` / `PARTIAL` / `PAID`, dérivé des deux ci-dessus |
+
+Une colonne de statut serait une seconde source de vérité, libre de contredire
+les paiements qu'elle prétend résumer. Une vente annulée n'apparaît dans aucun
+filtre `?paymentStatus=` : personne ne doit rien dessus.
+
+Chaque ligne fige le nom, la référence, l'unité, le prix, **le coût d'achat**
+et le taux de TVA de l'article au moment de la vente. Reclasser ou réévaluer un
+article ne réécrit donc jamais une vente déjà enregistrée — c'est ce qui permet
+au sous-projet 6 de calculer une marge historique juste.
+
+Les caissiers enregistrent les ventes et les encaissements : c'est la caisse.
+Ils n'annulent pas.
 
 ## Fuseau horaire
 

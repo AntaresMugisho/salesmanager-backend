@@ -4161,3 +4161,52 @@ Things a passing suite does not prove:
   `create` entry, the till stops working and only one test catches it.
 - **Query-count bounds.** If either was raised, confirm it does not grow with
   the row count.
+
+---
+
+## Follow-ups
+
+Recorded during execution. None blocks merge.
+
+- **Tasks 8–10 were implemented before their tests ran.** The `SaleViewSet` was
+  written referencing `add_payment`, `cancel_sale` and their serializers, which
+  left the module unimportable until all three existed — so the payment and
+  cancellation code went in before its red test. The tests themselves were
+  written in the plan before any of that code existed, so they are not shaped
+  to fit the implementation, but the red-green cycle was not observed for those
+  two tasks. Worth knowing when weighing how much the passing suite proves.
+- **The sale list was unordered, and only the full suite caught it.**
+  `Count("lines")` puts a GROUP BY on the queryset, and Django drops
+  `Meta.ordering` from any query that has one — so `sale_queryset()` returned
+  rows in arbitrary order and pagination could drop or repeat them between
+  pages. DRF's `UnorderedObjectListWarning` said so all along; it was suppressed
+  by `-p no:warnings` on every focused run. The test passed in isolation on
+  SQLite's incidental row order and failed once the suite ran in a different
+  order. Fixed with an explicit `.order_by("-created_at", "-id")` and guarded
+  by two deterministic tests. **`CategoryViewSet` has the same GROUP BY and
+  escapes only because `CatalogueViewSet` hands it an OrderingFilter and an
+  explicit `ordering`** — worth remembering before the next annotated list
+  endpoint is written without one.
+- **`french_sort_key` is not real collation.** It strips accents via NFKD,
+  which is right for article names but has no CLDR tailoring: languages where
+  an accented letter sorts as a *distinct* letter would be wrong, and so would
+  ligatures. Fine for this shop; name it if the product ever leaves French.
+- **`format_cents` hard-codes `$US`.** The frontend's `Intl` call does too, so
+  they agree — but a currency change means editing two places in two repos.
+  Sub-project 5 will want the same formatter; that is the moment to make the
+  currency a setting.
+- **The cancelled-sale exclusion lives in the filter, not the queryset.**
+  `?paymentStatus=` excludes cancelled sales, but a caller reading
+  `payment_status` off a cancelled sale directly still gets `UNPAID` rather
+  than something like `N/A`. The serializer's `balance` returns 0, so nothing
+  reads wrong today, and the frontend never shows a payment status on a
+  cancelled sale. Worth revisiting if sub-project 5's receivables query grows
+  its own copy of the rule.
+- **`add_payment` re-aggregates rather than reusing `paid_amount`.** It runs
+  its own `Sum` because it takes a bare `Sale`, not an annotated one. One extra
+  query per payment, and it keeps the guard correct regardless of how the
+  caller obtained the sale — but it is a second place that computes what
+  `sale_queryset` already knows.
+- **Carried over and still open:** the stock-status rule has four encodings;
+  `DocumentSequence` is not scoped by site; `UserViewSet` uses DRF's
+  `OrderingFilter` while articles use the strict one.

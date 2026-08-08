@@ -202,6 +202,27 @@ class TestCreate:
         assert row["transactionId"] == str(header.id)
         assert row["saleId"] is None
 
+    def test_sale_id_carries_a_value_for_a_sale_line(
+        self, auth_client, manager, site
+    ):
+        """The last hardcoded null is gone. A movement carries at most one of
+        transactionId and saleId."""
+        from apps.sales.services import create_sale
+        from apps.stock.tests.factories import StockLevelFactory
+
+        article = ArticleFactory()
+        StockLevelFactory(article=article, site=site, quantity=50)
+        sale = create_sale(
+            lines=[{"article": article, "quantity": 2, "unit_price": 5_000}],
+            user=manager,
+            site=site,
+        )
+
+        row = auth_client(manager).get(URL).json()["results"][0]
+
+        assert row["saleId"] == str(sale.id)
+        assert row["transactionId"] is None
+
     def test_a_cashier_may_not_post(self, auth_client, cashier, site):
         article = ArticleFactory()
         response = auth_client(cashier).post(
