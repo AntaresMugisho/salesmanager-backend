@@ -11,6 +11,7 @@ from apps.reports.facts import load_report_facts
 from apps.reports.profitability import build_profitability_report
 from apps.reports.result import build_result_report
 from apps.reports.sales import build_sales_report
+from apps.reports.stock import build_stock_report
 
 
 class ReportReadView(APIView):
@@ -61,3 +62,8 @@ class ProfitabilityReportView(ReportReadView):
             end,
             generated_at,
         )
+
+
+class StockReportView(ReportReadView):
+    def build(self, site, tz, start, end, generated_at) -> dict:
+        return build_stock_report(load_report_facts(site), tz, start, end, generated_at)
