@@ -73,6 +73,8 @@ INSTALLED_APPS = [
     "apps.sales",
     "apps.expenses",
     "apps.finance",
+    # No models, so no migrations: four read endpoints over the other apps.
+    "apps.reports",
 ]
 
 MIDDLEWARE = [

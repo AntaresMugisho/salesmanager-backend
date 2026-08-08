@@ -22,6 +22,12 @@ def load_facts(site) -> dict:
 
     `SaleLine` and `Payment` carry no site of their own, so they are narrowed
     through the sales that do.
+
+    Three fields here are read only by `apps.reports` — `customer_id`,
+    `discount` and `vat_rate`. They live in this shared projection rather than
+    a second query because the frontend's own `loadFacts` returns the same
+    wider shape and the finance folds simply read a narrower view of it.
+    Adding keys cannot affect those folds, which name the fields they read.
     """
     sales = list(
         Sale.objects.filter(site=site).values(
@@ -32,6 +38,8 @@ def load_facts(site) -> dict:
             "vat_total",
             "reference",
             "customer_name",
+            "customer_id",
+            "discount",
         )
     )
     sale_ids = [row["id"] for row in sales]
@@ -49,6 +57,7 @@ def load_facts(site) -> dict:
                 "discount_share",
                 "vat_amount",
                 "unit_cost",
+                "vat_rate",
             )
         ),
         "payments": list(
