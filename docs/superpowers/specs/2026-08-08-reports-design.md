@@ -346,10 +346,32 @@ July has a July compte de résultat, and it reads zero.
 
 ## Testing
 
-1. **Node cross-checks per builder** against the frontend's own
-   implementation over shared JSON fixtures, as in sub-project 5 — where the
-   comparison was the only check that caught one of four deliberate mutations.
-   All four builders are pure, so all four are covered.
+1. **Node cross-checks for the two builders that fold and sort** — `sales` and
+   `profitability` — over randomised facts, as in sub-project 5. Not all four,
+   and the reasons matter:
+
+   - `result` delegates entirely to `summarise` and `build_expense_breakdown`,
+     which already carry this comparison in
+     `apps/finance/tests/test_aggregate.py`. A second one would test the same
+     code through an extra layer of indirection.
+   - `stock` does grouping and fixed-order sorting; its one genuinely
+     divergence-prone element is French collation, and that is checked against
+     **real ICU** rather than a transcription — a stronger check than this one.
+
+   What this compares, precisely: the JS is a **transcription** of
+   `features/reports/lib/*.ts`, not an import of it, since running the real
+   modules would need a TypeScript toolchain in the test path. It catches
+   Python/JavaScript semantic divergence; it does not catch a transcription
+   that is faithfully wrong in both languages.
+
+   The comparison is mutation-tested. Four deliberate breakages must each be
+   caught: `margin_rate` rounded, `lowMargin` narrowed from `<= 0` to `< 0`,
+   the customer balance not floored per sale, and `cancelledCount` ignoring
+   the range. The second of those **escaped** on the first attempt — purely
+   random values essentially never produce a margin of exactly zero, so the
+   boundary was untested until the generator was taught to emit zero-margin
+   lines. A cross-check that cannot fail reads as coverage while providing
+   none.
 2. **Collation:** the 58-name corpus, asserting the sorted key sequence equals
    `localeCompare(…, "fr-FR")`; explicit cases for `Œ`, `Æ`, `ç`, `ù`; and
    tie-break determinism.
