@@ -6,6 +6,7 @@ from apps.stock.models import StockMovement, StockTransaction
 
 class MovementFilterSet(drf_filters.FilterSet):
     article_id = drf_filters.UUIDFilter(field_name="article_id")
+    sale_id = drf_filters.UUIDFilter(field_name="sale_id")
     type = drf_filters.ChoiceFilter(choices=StockMovement.Type.choices)
     reason = drf_filters.ChoiceFilter(choices=StockMovement.Reason.choices)
     # Bare calendar dates, resolved in SHOP_TIME_ZONE. `date_to` is inclusive
@@ -15,7 +16,7 @@ class MovementFilterSet(drf_filters.FilterSet):
 
     class Meta:
         model = StockMovement
-        fields = ["article_id", "type", "reason", "date_from", "date_to"]
+        fields = ["article_id", "sale_id", "type", "reason", "date_from", "date_to"]
 
     def filter_date_from(self, queryset, name, value):
         return queryset.filter(created_at__gte=start_of_day(value))

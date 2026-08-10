@@ -258,6 +258,28 @@ class TestList:
         response = auth_client(cashier).get(f"{URL}?articleId={wanted.id}")
         assert response.json()["count"] == 1
 
+    def test_filter_by_sale_id(self, auth_client, cashier, site, owner):
+        from apps.sales.services import create_sale
+
+        article = ArticleFactory()
+        StockLevelFactory(article=article, site=site, quantity=50)
+        wanted = create_sale(
+            lines=[{"article": article, "quantity": 2, "unit_price": 5_000}],
+            user=owner,
+            site=site,
+        )
+        create_sale(
+            lines=[{"article": article, "quantity": 1, "unit_price": 5_000}],
+            user=owner,
+            site=site,
+        )
+        StockMovementFactory(site=site, user=owner)
+
+        response = auth_client(cashier).get(f"{URL}?saleId={wanted.id}")
+
+        assert response.json()["count"] == 1
+        assert response.json()["results"][0]["saleId"] == str(wanted.id)
+
     def test_filter_by_type_and_reason(self, auth_client, cashier, site, owner):
         StockMovementFactory(site=site, user=owner, type="IN", reason="PURCHASE")
         StockMovementFactory(site=site, user=owner, type="OUT", reason="DAMAGE")
