@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "django_filters",
+    "drf_spectacular",
     "apps.common",
     "apps.accounts",
     "apps.catalogue",
@@ -165,6 +166,14 @@ REST_FRAMEWORK = {
     "COERCE_DECIMAL_TO_STRING": False,
     "EXCEPTION_HANDLER": "apps.common.exceptions.api_exception_handler",
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "StockManager API",
+    "DESCRIPTION": "API documentation for StockManager",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
 }
 
 SIMPLE_JWT = {
