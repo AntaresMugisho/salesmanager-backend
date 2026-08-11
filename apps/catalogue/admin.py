@@ -22,3 +22,8 @@ class ArticleAdmin(admin.ModelAdmin):
     list_filter = ["is_active", "unit", "category"]
     search_fields = ["sku", "name", "barcode"]
     autocomplete_fields = ["category", "supplier"]
+    # Without this the admin is a hole in a rule the rest of the system now
+    # enforces. On the add form the field renders empty and read-only, and
+    # save() fills it — the admin wraps its changeform view in a transaction,
+    # which is what next_sku needs.
+    readonly_fields = ["sku"]

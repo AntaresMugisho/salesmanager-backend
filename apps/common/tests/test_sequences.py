@@ -14,7 +14,7 @@ import pytest
 from django.db import transaction
 
 from apps.common.models import DocumentSequence
-from apps.common.sequences import next_reference
+from apps.common.sequences import next_reference, next_sku
 
 pytestmark = pytest.mark.django_db
 
@@ -22,6 +22,11 @@ pytestmark = pytest.mark.django_db
 def allocate(prefix="TR", year=2026):
     with transaction.atomic():
         return next_reference(prefix, year)
+
+
+def allocate_sku():
+    with transaction.atomic():
+        return next_sku()
 
 
 class TestFormat:
@@ -60,6 +65,54 @@ class TestSequencing:
         allocate(prefix="TR")
         allocate(prefix="TR")
         assert allocate(prefix="FA") == "FA-2026-0001"
+
+
+class TestSku:
+    """An article is not a document: its counter is not year-scoped."""
+
+    def test_the_first_sku_is_one_padded_to_five_digits(self):
+        assert allocate_sku() == "ART-00001"
+
+    def test_consecutive_skus_increment(self):
+        assert [allocate_sku() for _ in range(3)] == [
+            "ART-00001",
+            "ART-00002",
+            "ART-00003",
+        ]
+
+    def test_padding_widens_past_five_digits(self):
+        # update_or_create, not create: a later migration seeds this exact
+        # row, and from then on `create` would violate
+        # `one_sequence_per_prefix_and_year`. This form works either way.
+        DocumentSequence.objects.update_or_create(
+            prefix="ART", year=0, defaults={"last_number": 99999}
+        )
+        assert allocate_sku() == "ART-100000"
+
+    def test_skus_do_not_share_a_counter_with_documents(self):
+        """The decoy: if next_sku reused the TR/FA counter, or passed the
+        current year, this would come back as ART-00003 or ART-2026-0001."""
+        allocate(prefix="TR", year=2026)
+        allocate(prefix="TR", year=2026)
+        assert allocate_sku() == "ART-00001"
+
+    def test_a_rolled_back_sku_leaves_no_gap(self):
+        allocate_sku()
+
+        with pytest.raises(RuntimeError):
+            with transaction.atomic():
+                next_sku()
+                raise RuntimeError("something later in the write failed")
+
+        assert allocate_sku() == "ART-00002"
+
+    # `transaction=True` for the same reason as TestAtomicGuard below: the
+    # ordinary django_db fixture already holds an atomic block open, so the
+    # guard could never fire.
+    @pytest.mark.django_db(transaction=True)
+    def test_allocating_a_sku_outside_a_transaction_is_refused(self):
+        with pytest.raises(RuntimeError, match="atomic"):
+            next_sku()
 
 
 class TestRollback:
