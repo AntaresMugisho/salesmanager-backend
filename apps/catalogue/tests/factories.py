@@ -37,7 +37,10 @@ class ArticleFactory(DjangoModelFactory):
     class Meta:
         model = Article
 
-    sku = factory.Sequence(lambda n: f"ART-{n:04d}")
+    # Outside the generator's `ART-` namespace, and named for what it now
+    # stands in for: a legacy hand-typed reference. Left as `ART-` it avoided
+    # collision only by being four digits wide where the generator is five.
+    sku = factory.Sequence(lambda n: f"LEG-{n:04d}")
     barcode = None
     name = factory.Sequence(lambda n: f"Article {n}")
     description = None

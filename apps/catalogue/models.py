@@ -3,6 +3,7 @@ from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
 from apps.common.models import NameSortedModel, UUIDModel
+from apps.common.sequences import next_sku
 
 #: `name_sort` is twice its source field: ligature expansion lengthens the key,
 #: so a name at the limit would overflow a column of equal width.
@@ -122,6 +123,20 @@ class Article(NameSortedModel, UUIDModel):
                 condition=models.Q(barcode__isnull=False),
             ),
         ]
+
+    def save(self, **kwargs):
+        # `_state.adding` is what makes the SKU immutable: an instance loaded
+        # from the database never re-enters this branch, whatever a caller
+        # does to the field. An explicit SKU is honoured so legacy rows and
+        # the test factories can carry hand-typed references.
+        #
+        # next_sku raises outside an atomic block, so a bare
+        # Article.objects.create() in a shell fails loudly rather than writing
+        # a blank SKU. The API path is already @transaction.atomic and the
+        # Django admin wraps its changeform view in one.
+        if self._state.adding and not self.sku:
+            self.sku = next_sku()
+        super().save(**kwargs)
 
     def __str__(self) -> str:
         return f"{self.sku} — {self.name}"

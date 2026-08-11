@@ -15,6 +15,7 @@ from apps.catalogue.tests.factories import (
     CategoryFactory,
     SupplierFactory,
 )
+from apps.common.models import DocumentSequence
 
 pytestmark = pytest.mark.django_db
 
@@ -95,3 +96,41 @@ class TestArticle:
         ArticleFactory(name="Sucre")
         ArticleFactory(name="Farine")
         assert [a.name for a in Article.objects.all()] == ["Farine", "Sucre"]
+
+
+class TestGeneratedSku:
+    """The SKU is allocated once, at creation, and never changes."""
+
+    def test_a_new_article_gets_a_generated_sku(self):
+        article = Article.objects.create(
+            name="Sucre blanc", category=CategoryFactory()
+        )
+        assert article.sku == "ART-00001"
+
+    def test_consecutive_articles_get_consecutive_skus(self):
+        category = CategoryFactory()
+        first = Article.objects.create(name="Sucre", category=category)
+        second = Article.objects.create(name="Farine", category=category)
+        assert [first.sku, second.sku] == ["ART-00001", "ART-00002"]
+
+    def test_an_explicit_sku_is_kept(self):
+        """Legacy rows and the factories carry hand-typed references."""
+        article = Article.objects.create(
+            name="Sucre", category=CategoryFactory(), sku="EPI-001"
+        )
+        assert article.sku == "EPI-001"
+        # The seeding migration creates this row at 0 on every database,
+        # including the test one. Nothing here should have incremented it.
+        assert DocumentSequence.objects.get(prefix="ART", year=0).last_number == 0
+
+    def test_updating_an_article_does_not_allocate_a_new_number(self):
+        """The decoy for `_state.adding`. Without that guard an update would
+        burn a counter value, and the next article created would be ART-00003
+        rather than ART-00002."""
+        article = Article.objects.create(name="Sucre", category=CategoryFactory())
+        article.name = "Sucre roux"
+        article.save()
+
+        article.refresh_from_db()
+        assert article.sku == "ART-00001"
+        assert DocumentSequence.objects.get(prefix="ART", year=0).last_number == 1
