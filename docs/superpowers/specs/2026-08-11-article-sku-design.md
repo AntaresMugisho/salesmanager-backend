@@ -17,7 +17,7 @@ single `DocumentSequence` counter row per `(prefix, year)`, under
 
 `Article.sku` is the one reference still typed by a user. Today it is:
 
-- required on create, and editable on update, in `ArticleWriteSerializer`;
+- required on create, and editable on update, in `ArticleSerializer`;
 - validated by `validate_sku` — 14 lines of trimming, length and
   case-insensitive uniqueness checks with French error messages;
 - guarded at the database by `UniqueConstraint(Lower("sku"), …)`;
@@ -130,7 +130,7 @@ are unaffected; the full suite is the check.
 
 ## 4. API surface
 
-`sku` moves into `ArticleWriteSerializer.Meta.read_only_fields`. It stays in
+`sku` moves into `ArticleSerializer.Meta.read_only_fields`. It stays in
 `fields`, so every response still carries it.
 
 `validate_sku` is **deleted**. A value the client cannot send cannot be
