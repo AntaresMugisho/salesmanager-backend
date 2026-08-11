@@ -22,7 +22,6 @@ def detail_url(article) -> str:
 
 def payload(category, **overrides):
     body = {
-        "sku": "EPI-001",
         "barcode": None,
         "name": "Sucre blanc",
         "description": "Sac de 1 kg.",
@@ -46,8 +45,25 @@ class TestCreate:
         response = auth_client(manager).post(LIST_URL, payload(category), format="json")
 
         assert response.status_code == 201
-        assert response.json()["sku"] == "EPI-001"
+        assert response.json()["sku"] == "ART-00001"
         assert response.json()["stock"]["reorderThreshold"] == 10
+
+    def test_a_client_supplied_sku_is_ignored(self, auth_client, manager, site):
+        """The decoy: asserting only the ART- pattern would still pass if the
+        client's value were honoured whenever it happened to look generated."""
+        category = CategoryFactory()
+        response = auth_client(manager).post(
+            LIST_URL, payload(category, sku="HACK-1"), format="json"
+        )
+
+        assert response.status_code == 201
+        assert response.json()["sku"] == "ART-00001"
+        assert not Article.objects.filter(sku="HACK-1").exists()
+
+    def test_creating_without_a_sku_is_accepted(self, auth_client, manager, site):
+        category = CategoryFactory()
+        response = auth_client(manager).post(LIST_URL, payload(category), format="json")
+        assert response.status_code == 201
 
     def test_a_stock_level_is_written(self, auth_client, manager, site):
         category = CategoryFactory()
@@ -114,18 +130,10 @@ class TestCreate:
 
 
 class TestValidation:
-    def test_a_duplicate_sku_is_rejected_case_insensitively(
-        self, auth_client, manager, site
-    ):
-        category = CategoryFactory()
-        ArticleFactory(sku="EPI-001")
-        response = auth_client(manager).post(
-            LIST_URL, payload(category, sku="epi-001"), format="json"
-        )
-        assert response.status_code == 400
-        assert response.json()["fieldErrors"]["sku"] == [
-            "Cette référence est déjà utilisée."
-        ]
+    # The SKU has no validator here any more: it is allocated by
+    # Article.save() and read-only on the serializer, so a client cannot send
+    # a duplicate. `article_sku_unique_ci` is the remaining guarantee, covered
+    # by test_skus_differing_only_in_case_collide in test_models.py.
 
     def test_a_duplicate_barcode_is_rejected(self, auth_client, manager, site):
         category = CategoryFactory()
@@ -239,6 +247,26 @@ class TestUpdate:
 
         assert StockLevel.objects.get().quantity == 30
         assert StockMovement.objects.count() == 0
+
+    def test_the_sku_cannot_be_changed(self, auth_client, manager, site):
+        article = ArticleFactory(sku="LEG-0001")
+        response = auth_client(manager).patch(
+            detail_url(article), {"sku": "AUTRE-1"}, format="json"
+        )
+
+        assert response.status_code == 200
+        article.refresh_from_db()
+        assert article.sku == "LEG-0001"
+
+    def test_a_generated_sku_cannot_be_changed(self, auth_client, manager, site):
+        """Both paths, because a legacy SKU and a generated one reach the
+        serializer through different histories."""
+        article = Article.objects.create(name="Sucre", category=CategoryFactory())
+        auth_client(manager).patch(
+            detail_url(article), {"sku": "AUTRE-1"}, format="json"
+        )
+        article.refresh_from_db()
+        assert article.sku == "ART-00001"
 
     def test_an_article_can_be_archived(self, auth_client, manager, site):
         """The frontend's `archiveArticle` is exactly this PATCH."""

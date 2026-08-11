@@ -228,25 +228,12 @@ class ArticleSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "image_url", "created_at", "updated_at"]
+        # `sku` stays in `fields` — that is what keeps it in every response.
+        # It is allocated by Article.save(); a client can never send one.
+        read_only_fields = ["id", "sku", "image_url", "created_at", "updated_at"]
 
     def get_stock(self, obj):
         return StockSummarySerializer(obj, context=self.context).data
-
-    def validate_sku(self, value):
-        sku = value.strip()
-        if not sku:
-            raise serializers.ValidationError(_("La référence est obligatoire."))
-        if len(sku) > 32:
-            raise serializers.ValidationError(
-                _("La référence ne peut pas dépasser 32 caractères.")
-            )
-        existing = Article.objects.filter(sku__iexact=sku)
-        if self.instance is not None:
-            existing = existing.exclude(pk=self.instance.pk)
-        if existing.exists():
-            raise serializers.ValidationError(_("Cette référence est déjà utilisée."))
-        return sku
 
     def validate_barcode(self, value):
         if not value or not value.strip():
