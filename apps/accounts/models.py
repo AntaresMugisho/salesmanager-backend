@@ -141,3 +141,29 @@ class Site(UUIDModel):
         if self._state.adding and Site.objects.exists():
             raise ValidationError(_("Un seul établissement peut exister."))
         super().save(**kwargs)
+
+
+class Device(UUIDModel):
+    """One installation of the app that can record documents offline.
+
+    `install_id` is minted on the device and is what makes registration
+    idempotent — a device that reinstalls the app gets its existing code back
+    rather than a second one. `code` is assigned by the server so it is unique
+    by construction, which is what lets every reference the device ever emits
+    be unique without any further coordination.
+    """
+
+    install_id = models.UUIDField(_("identifiant d'installation"), unique=True)
+    code = models.CharField(_("code"), max_length=8, unique=True)
+    label = models.CharField(_("libellé"), max_length=60)
+    last_seen_at = models.DateTimeField(
+        _("vu pour la dernière fois"), null=True, blank=True
+    )
+
+    class Meta:
+        verbose_name = _("appareil")
+        verbose_name_plural = _("appareils")
+        ordering = ["code"]
+
+    def __str__(self):
+        return f"{self.code} — {self.label}"
