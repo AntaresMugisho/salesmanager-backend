@@ -32,6 +32,9 @@ def create_sale(
     discount: int = 0,
     discount_rate=None,
     note: str | None = None,
+    reference: str | None = None,
+    client_uuid=None,
+    allow_negative: bool = False,
 ) -> Sale:
     """Write one sale header, one line per article, and one OUT / SALE
     movement per line — all or nothing.
@@ -83,10 +86,13 @@ def create_sale(
             {"discount": [_("La remise ne peut pas dépasser le total de la vente.")]}
         )
 
-    reference = next_reference("FA", shop_today().year)
+    # A sale replayed from a device's queue arrives with the number already
+    # printed on the customer's receipt. Only an online sale is numbered here.
+    reference = reference or next_reference("FA", shop_today().year)
 
     sale = Sale.objects.create(
         reference=reference,
+        client_uuid=client_uuid,
         site=site,
         customer=customer,
         customer_name=customer.name if customer else None,
@@ -116,6 +122,7 @@ def create_sale(
             user=user,
             sale=sale,
             field_prefix=f"lines.{index}.",
+            allow_negative=allow_negative,
         )
 
         SaleLine.objects.create(

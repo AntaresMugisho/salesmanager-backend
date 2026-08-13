@@ -54,6 +54,15 @@ class Sale(UUIDModel):
         CANCELLED = "CANCELLED", _("Annulée")
 
     reference = models.CharField(_("référence"), max_length=20, unique=True)
+    #: Set only on a sale replayed from a device's offline queue: the id the
+    #: device gave the sale before it could reach the server, and what makes
+    #: the replay idempotent. NULL for every online sale, and Postgres treats
+    #: NULLs as distinct in a unique constraint — which is the property wanted
+    #: here, and the opposite of the one that made `SKU_YEAR` a 0 sentinel
+    #: rather than NULL.
+    client_uuid = models.UUIDField(
+        _("identifiant client"), null=True, blank=True, unique=True
+    )
     site = models.ForeignKey(Site, on_delete=models.PROTECT, related_name="sales")
     customer = models.ForeignKey(
         Customer,

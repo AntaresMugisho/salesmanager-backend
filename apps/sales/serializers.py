@@ -319,6 +319,14 @@ class SaleCreateSerializer(serializers.Serializer):
     note = serializers.CharField(
         max_length=300, required=False, allow_blank=True, allow_null=True, default=None
     )
+    # Present only on a replayed offline sale; the view refuses it without an
+    # X-Device-Code header and validates it against that device's series.
+    # Named `document_reference` rather than `reference` to stay identical to
+    # `TransactionCreateSerializer`, where plain `reference` is already taken
+    # by the supplier's delivery-note number.
+    document_reference = serializers.CharField(
+        max_length=20, required=False, allow_null=True, default=None
+    )
     lines = SaleLineInputSerializer(many=True)
 
     def validate_lines(self, value):
