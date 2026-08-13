@@ -1,0 +1,5 @@
+password,last_login,is_superuser,id,created_at,updated_at,email,full_name,role,avatar_url,is_active,is_staff
+pbkdf2_sha256$1200000$AFjWIjrxntYWbKxUo3jXI1$fM310yEN+uzEk8OgKJnoPHfoU+nUr/L+Y0S+rkjDfBs=,2026-08-10 12:35:13.319746,1,c998054ea6f247db9deb6bbbd66ba241,2026-08-10 11:48:42.280773,2026-08-10 11:48:42.280815,antares@dev.com,Antares Mugisho,OWNER,,1,1
+pbkdf2_sha256$1200000$lYmEf7Lh3kXOVrnnpTmpfR$F/JFafoyojzlYWxfe71uiMctOq9Z7/YmCLLuMMId2H0=,,0,226a70d134bb4fad873fbc57b363b0b9,2026-08-10 12:36:14.425600,2026-08-10 12:36:14.425626,admin@maishanimungu.com,Administrateur Alba,OWNER,,1,0
+pbkdf2_sha256$1200000$2Q0HcU8oePkk9nwCDWml9X$AoselXj9aFsJdV+faiJR99fRsBOGmlaAYasEuW1xqTA=,,0,0f538ba975e849b08df4d41a90b8ff40,2026-08-10 12:36:45.500728,2026-08-10 12:36:45.500748,caissier@maishanimungu.com,Caissier Alba,CASHIER,,1,0
+pbkdf2_sha256$1200000$6GKcA2DPVce76FMAw7zqaX$yFlwc6QIsRjWw5yC1xKUmAqp9O3Kx+tUqm7P4OvSjy0=,,0,71c9b53a4d2248b6966aa13a4682a83e,2026-08-10 12:39:00.904544,2026-08-10 12:39:00.904565,manager@maishanimungu.com,Manager Alba,MANAGER,,1,0
