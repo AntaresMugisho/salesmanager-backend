@@ -151,6 +151,12 @@ class TransactionCreateSerializer(serializers.Serializer):
     note = serializers.CharField(
         max_length=300, required=False, allow_blank=True, allow_null=True, default=None
     )
+    # The document's own number, present only on a replayed offline
+    # transaction. The `reference` field above is a different thing entirely:
+    # the supplier's delivery-note number, which the user types in.
+    document_reference = serializers.CharField(
+        max_length=20, required=False, allow_null=True, default=None
+    )
     lines = TransactionLineInputSerializer(many=True)
 
     def validate_lines(self, value):
