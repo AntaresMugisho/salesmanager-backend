@@ -1,3 +1,5 @@
+from django.db import transaction
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, status, viewsets
@@ -10,8 +12,10 @@ from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.accounts.models import Site, User
+from apps.accounts.models import Device, Site, User
 from apps.accounts.serializers import (
+    DeviceRegisterSerializer,
+    DeviceSerializer,
     LoginSerializer,
     RefreshSerializer,
     SiteSerializer,
@@ -22,6 +26,7 @@ from apps.accounts.filters import UserFilterSet
 from apps.common.exceptions import Conflict
 from apps.common.filters import CamelCaseQueryParamsMixin
 from apps.common.permissions import IsOwner, RoleScopedPermissionMixin
+from apps.common.sequences import next_device_code
 
 
 def _session_payload(user) -> dict:
@@ -221,3 +226,37 @@ class UserViewSet(
         assert_not_last_owner(instance, new_is_active=False)
         instance.is_active = False
         instance.save()
+
+
+class DeviceRegisterView(APIView):
+    """Assign this installation its numbering-series code.
+
+    Idempotent on `install_id`: a device that reinstalls the app keeps its
+    code, and a device that calls twice does not consume two. Any signed-in
+    user may register the till they are standing at — a cashier setting up a
+    new machine should not need the owner.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = DeviceRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        with transaction.atomic():
+            device = Device.objects.filter(install_id=data["install_id"]).first()
+            if device:
+                device.label = data["label"]
+                device.last_seen_at = timezone.now()
+                device.save(update_fields=["label", "last_seen_at", "updated_at"])
+                return Response(DeviceSerializer(device).data, status=200)
+
+            device = Device.objects.create(
+                install_id=data["install_id"],
+                code=next_device_code(),
+                label=data["label"],
+                last_seen_at=timezone.now(),
+            )
+
+        return Response(DeviceSerializer(device).data, status=201)
