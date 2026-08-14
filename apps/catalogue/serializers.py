@@ -5,6 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from apps.catalogue.models import Article, Category, Supplier
+from apps.stock.status import derive_stock_status
 
 PHONE_PATTERN = re.compile(r"^[\d\s+().-]{6,20}$")
 
@@ -159,14 +160,10 @@ class StockSummarySerializer(serializers.Serializer):
         return str(self.context["site"].id)
 
     def get_status(self, obj) -> str:
-        # The same three inclusive comparisons as StockLevel.status and as
-        # ArticleFilterSet's SQL. Three copies is two too many; they are kept
-        # in step by the tests, which assert the same boundaries in each.
-        if obj.stock_quantity <= 0:
-            return "OUT_OF_STOCK"
-        if obj.stock_quantity <= obj.stock_threshold:
-            return "LOW"
-        return "IN_STOCK"
+        # Was a hand-inlined copy of the rule, under a comment saying so. It
+        # is pure Python over two integers the annotation already provides, so
+        # there was never a reason for it to exist separately.
+        return derive_stock_status(obj.stock_quantity, obj.stock_threshold)
 
 
 class ArticleSerializer(serializers.ModelSerializer):
