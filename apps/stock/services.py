@@ -38,6 +38,7 @@ def apply_movement(
     sale=None,
     field_prefix: str = "",
     allow_negative: bool = False,
+    movement_id=None,
 ) -> StockMovement:
     """Post one movement and update the level it applies to.
 
@@ -61,6 +62,10 @@ def apply_movement(
     only by a write replayed from a device's offline queue: that sale already
     happened, so the honest record is a negative level someone corrects, not
     a refusal nobody can act on. Every online caller leaves it False.
+
+    `movement_id` is set only by a replay from a device's offline queue, so
+    the movement keeps the identity the device gave it and a second POST of
+    the same id is a no-op rather than a second movement.
     """
     # select_for_update is a silent no-op on SQLite — verified,
     # connection.features.has_select_for_update is False and the call neither
@@ -108,6 +113,9 @@ def apply_movement(
         level.save(update_fields=["quantity", "updated_at"])
 
     return StockMovement.objects.create(
+        # Spread, never `id=movement_id`: passing None explicitly would
+        # override the model's uuid4 default with NULL.
+        **({"id": movement_id} if movement_id else {}),
         article=article,
         site=site,
         type=type,

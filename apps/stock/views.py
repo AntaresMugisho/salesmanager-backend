@@ -68,6 +68,16 @@ class MovementViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        device = resolve_offline_write(request)
+
+        # Before apply_movement, so a replay returns the movement it already
+        # posted rather than moving the level a second time.
+        movement_id = data.get("id")
+        if movement_id:
+            existing = StockMovement.objects.filter(pk=movement_id).first()
+            if existing:
+                return Response(StockMovementSerializer(existing).data, status=200)
+
         movement = apply_movement(
             article=data["article"],
             site=Site.objects.current(),
@@ -78,6 +88,8 @@ class MovementViewSet(
             reference=data.get("reference"),
             note=data.get("note"),
             user=request.user,
+            movement_id=movement_id,
+            allow_negative=bool(device),
         )
 
         return Response(StockMovementSerializer(movement).data, status=201)

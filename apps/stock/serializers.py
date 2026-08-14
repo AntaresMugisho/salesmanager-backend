@@ -50,6 +50,9 @@ class MovementCreateSerializer(serializers.Serializer):
     `apply_movement`, never supplied.
     """
 
+    # Minted on the device when the movement is queued offline, so replaying
+    # it is a no-op rather than a second movement. Absent on the online path.
+    id = serializers.UUIDField(required=False, allow_null=True, default=None)
     article_id = serializers.PrimaryKeyRelatedField(
         source="article", queryset=Article.objects.all()
     )
