@@ -137,7 +137,7 @@ def create_transaction(
     user_reference: str | None = None,
     note: str | None = None,
     reference: str | None = None,
-    client_uuid=None,
+    transaction_id=None,
     allow_negative: bool = False,
 ) -> StockTransaction:
     """Write one header plus one movement per line, all or nothing.
@@ -164,8 +164,10 @@ def create_transaction(
     reference = reference or next_reference("TR", shop_today().year)
 
     header = StockTransaction.objects.create(
+        # Spread, never `id=transaction_id`: passing None explicitly would
+        # override the model's uuid4 default with NULL.
+        **({"id": transaction_id} if transaction_id else {}),
         reference=reference,
-        client_uuid=client_uuid,
         site=site,
         user_reference=cleaned_reference,
         type=type,

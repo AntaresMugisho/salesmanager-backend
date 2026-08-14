@@ -57,13 +57,15 @@ def validate_device_reference(
 
 
 def resolve_offline_write(request):
-    """Return `(device, client_uuid)` for a write replayed from a queue.
+    """Return the `Device` a queued write came from, or None for an online one.
 
-    `(None, None)` for an ordinary online write, which is every request that
-    sends no `X-Device-Code`. A device code that names no registered device is
-    an error rather than a silent fall-back to the online path: falling back
-    would allocate a server reference for a sale whose receipt is already
-    printed with a different number.
+    None for every request that sends no `X-Device-Code`. A code naming no
+    registered device is an error rather than a silent fall-back to the online
+    path: falling back would allocate a server reference for a sale whose
+    receipt is already printed with a different number.
+
+    There is no idempotency key: the client mints each document's primary key,
+    so the pk is the key. A replay is a POST whose pk already exists.
     """
     # Imported here rather than at module scope: `apps.common` is imported by
     # every app, and a top-level import of `apps.accounts` would make the
@@ -71,10 +73,8 @@ def resolve_offline_write(request):
     from apps.accounts.models import Device
 
     code = request.headers.get("X-Device-Code")
-    key = request.headers.get("Idempotency-Key")
-
     if not code:
-        return None, None
+        return None
 
     device = Device.objects.filter(code=code).first()
     if device is None:
@@ -82,4 +82,4 @@ def resolve_offline_write(request):
             {"deviceCode": [_("Appareil inconnu. Enregistrez-le à nouveau.")]}
         )
 
-    return device, key or None
+    return device

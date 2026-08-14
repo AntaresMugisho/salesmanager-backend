@@ -28,8 +28,9 @@ def stocked(site, quantity=100):
 
 
 def body(article, quantity=5, type="IN", reason="PURCHASE",
-         reference="TR-C2-2026-0003"):
+         reference="TR-C2-2026-0003", transaction_id=None):
     return {
+        "id": str(transaction_id or uuid.uuid4()),
         "type": type,
         "reason": reason,
         "supplierId": None,
@@ -45,11 +46,8 @@ def body(article, quantity=5, type="IN", reason="PURCHASE",
     }
 
 
-def headers(device, key=None):
-    return {
-        "HTTP_X_DEVICE_CODE": device.code,
-        "HTTP_IDEMPOTENCY_KEY": str(key or uuid.uuid4()),
-    }
+def headers(device):
+    return {"HTTP_X_DEVICE_CODE": device.code}
 
 
 def test_offline_transaction_keeps_its_reference(auth_client, manager, site, device):
@@ -77,10 +75,10 @@ def test_online_transaction_is_still_server_numbered(auth_client, manager, site)
 def test_replay_returns_the_same_transaction(auth_client, manager, site, device):
     article = stocked(site)
     client = auth_client(manager)
-    key = uuid.uuid4()
+    payload = body(article)
 
-    first = client.post(URL, body(article), format="json", **headers(device, key))
-    second = client.post(URL, body(article), format="json", **headers(device, key))
+    first = client.post(URL, payload, format="json", **headers(device))
+    second = client.post(URL, payload, format="json", **headers(device))
 
     assert first.status_code == 201
     assert second.status_code == 200
@@ -91,10 +89,10 @@ def test_replay_returns_the_same_transaction(auth_client, manager, site, device)
 def test_replay_does_not_move_stock_twice(auth_client, manager, site, device):
     article = stocked(site, quantity=10)
     client = auth_client(manager)
-    key = uuid.uuid4()
+    payload = body(article)
 
-    client.post(URL, body(article), format="json", **headers(device, key))
-    client.post(URL, body(article), format="json", **headers(device, key))
+    client.post(URL, payload, format="json", **headers(device))
+    client.post(URL, payload, format="json", **headers(device))
 
     assert StockLevel.objects.get(article=article, site=site).quantity == 15
 
@@ -152,3 +150,20 @@ def test_duplicate_reference_is_refused(auth_client, manager, site, device):
 
     assert response.status_code == 400
     assert StockTransaction.objects.count() == 1
+
+
+def test_the_client_supplied_id_is_the_transaction_pk(
+    auth_client, manager, site, device
+):
+    article = stocked(site)
+    transaction_id = uuid.uuid4()
+
+    response = auth_client(manager).post(
+        URL,
+        body(article, transaction_id=transaction_id),
+        format="json",
+        **headers(device),
+    )
+
+    assert response.status_code == 201
+    assert response.data["id"] == str(transaction_id)

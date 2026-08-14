@@ -28,8 +28,9 @@ def stocked(site, quantity=100):
     return article
 
 
-def body(article, quantity=2, reference="FA-C2-2026-0007"):
+def body(article, quantity=2, reference="FA-C2-2026-0007", sale_id=None):
     return {
+        "id": str(sale_id or uuid.uuid4()),
         "customerId": None,
         "discount": 0,
         "discountRate": None,
@@ -41,11 +42,8 @@ def body(article, quantity=2, reference="FA-C2-2026-0007"):
     }
 
 
-def headers(device, key=None):
-    return {
-        "HTTP_X_DEVICE_CODE": device.code,
-        "HTTP_IDEMPOTENCY_KEY": str(key or uuid.uuid4()),
-    }
+def headers(device):
+    return {"HTTP_X_DEVICE_CODE": device.code}
 
 
 def test_offline_sale_keeps_the_reference_it_arrived_with(
@@ -78,10 +76,10 @@ def test_replay_returns_the_same_sale_without_creating_a_second(
 ):
     article = stocked(site)
     client = auth_client(cashier)
-    key = uuid.uuid4()
+    payload = body(article)
 
-    first = client.post(URL, body(article), format="json", **headers(device, key))
-    second = client.post(URL, body(article), format="json", **headers(device, key))
+    first = client.post(URL, payload, format="json", **headers(device))
+    second = client.post(URL, payload, format="json", **headers(device))
 
     assert first.status_code == 201
     assert second.status_code == 200
@@ -92,12 +90,24 @@ def test_replay_returns_the_same_sale_without_creating_a_second(
 def test_replay_does_not_move_stock_twice(auth_client, cashier, site, device):
     article = stocked(site, quantity=10)
     client = auth_client(cashier)
-    key = uuid.uuid4()
+    payload = body(article)
 
-    client.post(URL, body(article), format="json", **headers(device, key))
-    client.post(URL, body(article), format="json", **headers(device, key))
+    client.post(URL, payload, format="json", **headers(device))
+    client.post(URL, payload, format="json", **headers(device))
 
     assert StockLevel.objects.get(article=article, site=site).quantity == 8
+
+
+def test_the_client_supplied_id_is_the_sale_pk(auth_client, cashier, site, device):
+    article = stocked(site)
+    sale_id = uuid.uuid4()
+
+    response = auth_client(cashier).post(
+        URL, body(article, sale_id=sale_id), format="json", **headers(device)
+    )
+
+    assert response.status_code == 201
+    assert response.data["id"] == str(sale_id)
 
 
 def test_offline_sale_may_oversell(auth_client, cashier, site, device):
@@ -161,9 +171,9 @@ def test_reference_without_a_device_header_is_refused(auth_client, cashier, site
 
 
 def test_duplicate_reference_is_refused(auth_client, cashier, site, device):
-    """A *fresh* idempotency key with a reference already used is a client
-    bug, and must read as one. `headers()` mints a new key each call, which is
-    what makes this a different request rather than the replay above."""
+    """A different sale reusing a reference already taken is a client bug.
+    A *replay* is the same id, and is handled above. `body()` mints a fresh
+    id each call, which is what makes this a different sale."""
     article = stocked(site)
     client = auth_client(cashier)
     client.post(URL, body(article), format="json", **headers(device))

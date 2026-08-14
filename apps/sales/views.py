@@ -15,7 +15,7 @@ from apps.common.references import (
 from apps.common.permissions import IsManagerOrAbove, RoleScopedPermissionMixin
 from apps.common.views import CatalogueViewSet
 from apps.sales.filters import SaleFilterSet
-from apps.sales.models import Customer, Sale
+from apps.sales.models import Customer, Payment, Sale
 from apps.sales.querysets import sale_queryset
 from apps.sales.serializers import (
     CustomerSerializer,
@@ -89,8 +89,9 @@ class SaleViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        device, client_uuid = resolve_offline_write(request)
+        device = resolve_offline_write(request)
         reference = data.get("document_reference")
+        sale_id = data.get("id")
 
         if reference and not device:
             raise serializers.ValidationError(
@@ -107,8 +108,8 @@ class SaleViewSet(
         # accept. The queue is retrying a sale the server already committed;
         # returning it — rather than 409 — is what lets a client drain its
         # queue after a sync that died half way.
-        if client_uuid:
-            existing = sale_queryset().filter(client_uuid=client_uuid).first()
+        if sale_id:
+            existing = sale_queryset().filter(pk=sale_id).first()
             if existing:
                 return Response(
                     SaleSerializer(
@@ -127,9 +128,9 @@ class SaleViewSet(
             # Explicit, because SaleCreateSerializer is a plain Serializer and
             # validates no uniqueness of its own. Without this the duplicate
             # reaches the column's unique constraint and DRF renders the
-            # IntegrityError as a 500. Reaching here means a *different*
-            # idempotency key with a reference already used — a client bug,
-            # and it should read as one.
+            # IntegrityError as a 500. Reaching here means a *different* sale
+            # reusing a reference already taken — a replay would have returned
+            # above — which is a client bug and should read as one.
             if Sale.objects.filter(reference=reference).exists():
                 raise serializers.ValidationError(
                     {
@@ -148,7 +149,7 @@ class SaleViewSet(
             discount_rate=data.get("discount_rate"),
             note=data.get("note"),
             reference=reference,
-            client_uuid=client_uuid,
+            sale_id=sale_id,
             allow_negative=bool(device),
         )
 
@@ -167,6 +168,26 @@ class SaleViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        # Before `add_payment`, so a replay returns the payment it already
+        # made rather than tripping the overpayment guard on the way in.
+        payment_id = data.get("id")
+        if payment_id:
+            existing = Payment.objects.filter(pk=payment_id).first()
+            if existing:
+                # Looked up by pk alone, then checked: filtering by sale as
+                # well would let a colliding id reach the pk constraint as a
+                # 500, and returning it unchecked would hand back a different
+                # sale's payment.
+                if existing.sale_id != sale.id:
+                    raise serializers.ValidationError(
+                        {
+                            "id": [
+                                _("Ce paiement est déjà rattaché à une autre vente.")
+                            ]
+                        }
+                    )
+                return Response(PaymentSerializer(existing).data, status=200)
+
         payment = add_payment(
             sale=sale,
             amount=data["amount"],
@@ -175,6 +196,7 @@ class SaleViewSet(
             user=request.user,
             reference=data.get("reference"),
             note=data.get("note"),
+            payment_id=payment_id,
         )
 
         return Response(PaymentSerializer(payment).data, status=201)

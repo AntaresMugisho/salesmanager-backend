@@ -33,7 +33,7 @@ def create_sale(
     discount_rate=None,
     note: str | None = None,
     reference: str | None = None,
-    client_uuid=None,
+    sale_id=None,
     allow_negative: bool = False,
 ) -> Sale:
     """Write one sale header, one line per article, and one OUT / SALE
@@ -91,8 +91,10 @@ def create_sale(
     reference = reference or next_reference("FA", shop_today().year)
 
     sale = Sale.objects.create(
+        # Spread, never `id=sale_id`: passing None explicitly would override
+        # the model's uuid4 default with NULL.
+        **({"id": sale_id} if sale_id else {}),
         reference=reference,
-        client_uuid=client_uuid,
         site=site,
         customer=customer,
         customer_name=customer.name if customer else None,
@@ -153,6 +155,7 @@ def add_payment(
     user,
     reference: str | None = None,
     note: str | None = None,
+    payment_id=None,
 ) -> Payment:
     """Record a payment against a sale.
 
@@ -188,6 +191,9 @@ def add_payment(
         )
 
     return Payment.objects.create(
+        # Spread, never `id=payment_id`: passing None explicitly would
+        # override the model's uuid4 default with NULL.
+        **({"id": payment_id} if payment_id else {}),
         sale=sale,
         amount=amount,
         method=method,
