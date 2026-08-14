@@ -132,6 +132,51 @@ class TestFilters:
         assert response.json()["count"] == 1
         assert response.json()["results"][0]["stock"]["status"] == status
 
+    def test_negative_returns_only_articles_below_zero(
+        self, auth_client, cashier, site
+    ):
+        negative = ArticleFactory()
+        StockLevelFactory(article=negative, site=site, quantity=-3)
+        empty = ArticleFactory()
+        StockLevelFactory(article=empty, site=site, quantity=0)
+        stocked = ArticleFactory()
+        StockLevelFactory(article=stocked, site=site, quantity=10)
+
+        response = auth_client(cashier).get(f"{LIST_URL}?stockStatus=NEGATIVE")
+
+        ids = [row["id"] for row in response.json()["results"]]
+        assert ids == [str(negative.id)]
+
+    def test_out_of_stock_no_longer_includes_negatives(
+        self, auth_client, cashier, site
+    ):
+        """The two buckets are now disjoint, which is the point of the change.
+
+        `OUT_OF_STOCK` had to narrow from `<= 0` to `= 0`; without that a
+        negative article appears in both.
+        """
+        negative = ArticleFactory()
+        StockLevelFactory(article=negative, site=site, quantity=-3)
+        empty = ArticleFactory()
+        StockLevelFactory(article=empty, site=site, quantity=0)
+
+        response = auth_client(cashier).get(f"{LIST_URL}?stockStatus=OUT_OF_STOCK")
+
+        ids = [row["id"] for row in response.json()["results"]]
+        assert ids == [str(empty.id)]
+
+    def test_the_filter_agrees_with_the_serialised_status(
+        self, auth_client, cashier, site
+    ):
+        """The SQL and the Python rule are separate encodings; this is the
+        test that keeps them in step."""
+        article = ArticleFactory()
+        StockLevelFactory(article=article, site=site, quantity=-3)
+
+        response = auth_client(cashier).get(f"{LIST_URL}?stockStatus=NEGATIVE")
+
+        assert response.json()["results"][0]["stock"]["status"] == "NEGATIVE"
+
     def test_search_covers_name_sku_and_barcode(self, auth_client, cashier, site):
         ArticleFactory(name="Sucre blanc", sku="EPI-001", barcode="1234567890123")
         ArticleFactory(name="Farine", sku="EPI-002", barcode="9876543210987")
