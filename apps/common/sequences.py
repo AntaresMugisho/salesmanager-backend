@@ -16,6 +16,13 @@ from apps.common.models import DocumentSequence
 SKU_PREFIX = "ART"
 SKU_YEAR = 0
 
+#: Device codes share the counter table on the same terms as SKUs: a till does
+#: not belong to a financial year either. Registration is rare, but it is the
+#: one moment two devices could collide, and this is already the module that
+#: hands out a monotonic integer under a row lock.
+DEVICE_PREFIX = "DEV"
+DEVICE_YEAR = 0
+
 
 def _next_number(prefix: str, year: int) -> int:
     """Allocate and return the next raw counter value for `prefix`/`year`.
@@ -56,3 +63,12 @@ def next_reference(prefix: str, year: int) -> str:
 def next_sku() -> str:
     """Allocate the next `ART-NNNNN`."""
     return f"{SKU_PREFIX}-{_next_number(SKU_PREFIX, SKU_YEAR):05d}"
+
+
+def next_device_code() -> str:
+    """Allocate the next device code, `C1`, `C2`, …
+
+    Unpadded deliberately: the code is printed inside a reference on a
+    customer's receipt (`FA-C2-2026-0007`), where `C0002` would be noise.
+    """
+    return f"C{_next_number(DEVICE_PREFIX, DEVICE_YEAR)}"

@@ -26,7 +26,14 @@ class StockLevel(UUIDModel):
     site = models.ForeignKey(
         Site, on_delete=models.PROTECT, related_name="stock_levels"
     )
-    quantity = models.PositiveIntegerField(_("quantité"), default=0)
+    # Signed, not Positive: a sale recorded offline is replayed after the
+    # fact and may find the shelf already empty. Refusing it then helps
+    # nobody — the money has changed hands. The level goes negative and the
+    # discrepancy is surfaced for correction instead. Only a write from a
+    # device's offline queue can get here (`apply_movement(allow_negative=)`);
+    # every online path still refuses to oversell.
+    quantity = models.IntegerField(_("quantité"), default=0)
+    # Stays Positive: a negative reorder threshold is meaningless.
     reorder_threshold = models.PositiveIntegerField(
         _("seuil de réapprovisionnement"), default=0
     )
@@ -86,8 +93,11 @@ class StockMovement(UUIDModel):
     # Always positive; `type` carries the direction. For an ADJUSTMENT this is
     # the delta that was applied, not the counted target the client sent.
     quantity = models.PositiveIntegerField(_("quantité"))
-    quantity_before = models.PositiveIntegerField(_("quantité avant"))
-    quantity_after = models.PositiveIntegerField(_("quantité après"))
+    # Signed for the same reason as `StockLevel.quantity`: a replayed offline
+    # sale can take the level below zero, and the ledger has to be able to
+    # record where it actually went.
+    quantity_before = models.IntegerField(_("quantité avant"))
+    quantity_after = models.IntegerField(_("quantité après"))
     unit_cost = models.PositiveIntegerField(_("coût unitaire"), null=True, blank=True)
     reference = models.CharField(_("référence"), max_length=40, null=True, blank=True)
     note = models.CharField(_("note"), max_length=300, null=True, blank=True)
@@ -142,6 +152,11 @@ class StockTransaction(UUIDModel):
     """
 
     reference = models.CharField(_("référence"), max_length=20, unique=True)
+    #: Set only on a transaction replayed from a device's offline queue. See
+    #: the identical field on `Sale` for why NULL rather than a sentinel.
+    client_uuid = models.UUIDField(
+        _("identifiant client"), null=True, blank=True, unique=True
+    )
     site = models.ForeignKey(
         Site, on_delete=models.PROTECT, related_name="transactions"
     )

@@ -213,3 +213,64 @@ class TestTransactionLink:
 
         assert movement.transaction == header
         assert list(header.lines.all()) == [movement]
+
+
+class TestAllowNegative:
+    """`allow_negative` is set only by a write replayed from a device's
+    offline queue. The sale already happened; refusing it afterwards helps
+    nobody, so the level goes negative and sub-project 5 surfaces it."""
+
+    def test_out_beyond_stock_is_refused_by_default(self, site, owner):
+        article = ArticleFactory()
+        StockLevelFactory(article=article, site=site, quantity=3)
+
+        with pytest.raises(ValidationError) as excinfo:
+            post(article, site, owner, type="OUT", reason="SALE", quantity=5)
+
+        assert "quantity" in excinfo.value.detail
+
+    def test_posts_the_movement_anyway(self, site, owner):
+        article = ArticleFactory()
+        StockLevelFactory(article=article, site=site, quantity=3)
+
+        movement = post(
+            article, site, owner,
+            type="OUT", reason="SALE", quantity=5, allow_negative=True,
+        )
+
+        assert movement.quantity_before == 3
+        assert movement.quantity_after == -2
+        assert movement.quantity == 5
+
+    def test_writes_the_negative_level(self, site, owner):
+        article = ArticleFactory()
+        StockLevelFactory(article=article, site=site, quantity=3)
+
+        post(
+            article, site, owner,
+            type="OUT", reason="SALE", quantity=5, allow_negative=True,
+        )
+
+        assert StockLevel.objects.get(article=article, site=site).quantity == -2
+
+    def test_works_from_a_level_that_does_not_exist(self, site, owner):
+        article = ArticleFactory()
+
+        movement = post(
+            article, site, owner,
+            type="OUT", reason="SALE", quantity=2, allow_negative=True,
+        )
+
+        assert movement.quantity_before == 0
+        assert movement.quantity_after == -2
+
+    def test_does_not_affect_in_movements(self, site, owner):
+        article = ArticleFactory()
+        StockLevelFactory(article=article, site=site, quantity=3)
+
+        movement = post(
+            article, site, owner,
+            type="IN", reason="PURCHASE", quantity=5, allow_negative=True,
+        )
+
+        assert movement.quantity_after == 8

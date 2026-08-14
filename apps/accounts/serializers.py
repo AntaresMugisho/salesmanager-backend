@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
-from apps.accounts.models import Site, User
+from apps.accounts.models import Device, Site, User
 from apps.common.exceptions import InvalidCredentials
 
 
@@ -186,3 +186,22 @@ class UserWriteSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         return UserDetailSerializer(instance).data
+
+
+class DeviceSerializer(serializers.ModelSerializer):
+    """What registration hands back. `install_id` is deliberately not echoed:
+    the device already has it, and it is the only thing identifying the
+    installation."""
+
+    class Meta:
+        model = Device
+        fields = ["id", "code", "label"]
+        read_only_fields = fields
+
+
+class DeviceRegisterSerializer(serializers.Serializer):
+    """The device's half of registration. `install_id` is minted on the
+    device, which is what makes the call idempotent."""
+
+    install_id = serializers.UUIDField()
+    label = serializers.CharField(max_length=60)

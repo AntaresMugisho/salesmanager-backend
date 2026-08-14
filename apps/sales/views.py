@@ -1,6 +1,6 @@
 from django.utils.translation import gettext_lazy as _
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, mixins, viewsets
+from rest_framework import filters, mixins, serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -8,10 +8,14 @@ from apps.accounts.models import Site
 from apps.common.exceptions import Conflict
 from apps.common.filters import CamelCaseQueryParamsMixin
 from apps.common.pagination import StandardPagination
+from apps.common.references import (
+    resolve_offline_write,
+    validate_device_reference,
+)
 from apps.common.permissions import IsManagerOrAbove, RoleScopedPermissionMixin
 from apps.common.views import CatalogueViewSet
 from apps.sales.filters import SaleFilterSet
-from apps.sales.models import Customer
+from apps.sales.models import Customer, Sale
 from apps.sales.querysets import sale_queryset
 from apps.sales.serializers import (
     CustomerSerializer,
@@ -85,6 +89,56 @@ class SaleViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        device, client_uuid = resolve_offline_write(request)
+        reference = data.get("document_reference")
+
+        if reference and not device:
+            raise serializers.ValidationError(
+                {
+                    "documentReference": [
+                        _("Un numéro de document exige l'en-tête X-Device-Code.")
+                    ]
+                }
+            )
+
+        # Before any reference check, and deliberately: a replay carries the
+        # same reference as the sale it is replaying, so a uniqueness check
+        # placed first would reject exactly the requests this exists to
+        # accept. The queue is retrying a sale the server already committed;
+        # returning it — rather than 409 — is what lets a client drain its
+        # queue after a sync that died half way.
+        if client_uuid:
+            existing = sale_queryset().filter(client_uuid=client_uuid).first()
+            if existing:
+                return Response(
+                    SaleSerializer(
+                        existing, context=self.get_serializer_context()
+                    ).data,
+                    status=200,
+                )
+
+        if reference:
+            validate_device_reference(
+                reference,
+                prefix="FA",
+                device_code=device.code,
+                field="documentReference",
+            )
+            # Explicit, because SaleCreateSerializer is a plain Serializer and
+            # validates no uniqueness of its own. Without this the duplicate
+            # reaches the column's unique constraint and DRF renders the
+            # IntegrityError as a 500. Reaching here means a *different*
+            # idempotency key with a reference already used — a client bug,
+            # and it should read as one.
+            if Sale.objects.filter(reference=reference).exists():
+                raise serializers.ValidationError(
+                    {
+                        "documentReference": [
+                            _("Ce numéro de document a déjà été enregistré.")
+                        ]
+                    }
+                )
+
         sale = create_sale(
             lines=data["lines"],
             user=request.user,
@@ -93,6 +147,9 @@ class SaleViewSet(
             discount=data.get("discount", 0),
             discount_rate=data.get("discount_rate"),
             note=data.get("note"),
+            reference=reference,
+            client_uuid=client_uuid,
+            allow_negative=bool(device),
         )
 
         # Re-read through the annotated queryset: a bare Sale has no

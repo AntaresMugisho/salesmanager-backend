@@ -6,8 +6,9 @@ from django.db.models import (
     Sum,
     When,
 )
+from django.utils.translation import gettext_lazy as _
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, mixins, viewsets
+from rest_framework import filters, mixins, serializers, viewsets
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -20,6 +21,10 @@ from apps.common.dates import today_start
 from apps.common.filters import CamelCaseQueryParamsMixin
 from apps.common.pagination import StandardPagination
 from apps.common.permissions import IsManagerOrAbove, RoleScopedPermissionMixin
+from apps.common.references import (
+    resolve_offline_write,
+    validate_device_reference,
+)
 from apps.stock.filters import MovementFilterSet, TransactionFilterSet
 from apps.stock.models import StockLevel, StockMovement, StockTransaction
 from apps.stock.serializers import (
@@ -185,6 +190,44 @@ class TransactionViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        device, client_uuid = resolve_offline_write(request)
+        document_reference = data.get("document_reference")
+
+        if document_reference and not device:
+            raise serializers.ValidationError(
+                {
+                    "documentReference": [
+                        _("Un numéro de document exige l'en-tête X-Device-Code.")
+                    ]
+                }
+            )
+
+        # Before the reference checks, for the reason given in SaleViewSet: a
+        # replay carries the same reference as the transaction it replays.
+        if client_uuid:
+            existing = StockTransaction.objects.filter(client_uuid=client_uuid).first()
+            if existing:
+                return Response(StockTransactionSerializer(existing).data, status=200)
+
+        if document_reference:
+            validate_device_reference(
+                document_reference,
+                prefix="TR",
+                device_code=device.code,
+                field="documentReference",
+            )
+            # Explicit for the same reason as on sales: this serializer is a
+            # plain Serializer, so an unchecked duplicate would reach the
+            # column constraint and render as a 500.
+            if StockTransaction.objects.filter(reference=document_reference).exists():
+                raise serializers.ValidationError(
+                    {
+                        "documentReference": [
+                            _("Ce numéro de document a déjà été enregistré.")
+                        ]
+                    }
+                )
+
         header = create_transaction(
             type=data["type"],
             reason=data["reason"],
@@ -192,8 +235,13 @@ class TransactionViewSet(
             user=request.user,
             site=Site.objects.current(),
             supplier=data.get("supplier"),
+            # Unchanged: the supplier's delivery-note number, not the
+            # document's own reference.
             user_reference=data.get("reference"),
             note=data.get("note"),
+            reference=document_reference,
+            client_uuid=client_uuid,
+            allow_negative=bool(device),
         )
 
         return Response(StockTransactionSerializer(header).data, status=201)

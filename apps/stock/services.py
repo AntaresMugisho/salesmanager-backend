@@ -37,6 +37,7 @@ def apply_movement(
     stock_transaction=None,
     sale=None,
     field_prefix: str = "",
+    allow_negative: bool = False,
 ) -> StockMovement:
     """Post one movement and update the level it applies to.
 
@@ -55,6 +56,11 @@ def apply_movement(
     `field_prefix` routes validation errors to a form row: passing
     `"lines.2."` produces the key `lines.2.quantity`, which is
     react-hook-form's array-field syntax and what sub-project 3 needs.
+
+    `allow_negative` switches off the sufficiency check for OUT. It is set
+    only by a write replayed from a device's offline queue: that sale already
+    happened, so the honest record is a negative level someone corrects, not
+    a refusal nobody can act on. Every online caller leaves it False.
     """
     # select_for_update is a silent no-op on SQLite — verified,
     # connection.features.has_select_for_update is False and the call neither
@@ -72,7 +78,7 @@ def apply_movement(
         quantity_after = quantity_before + quantity
         recorded = quantity
     elif type == StockMovement.Type.OUT:
-        if quantity > quantity_before:
+        if quantity > quantity_before and not allow_negative:
             raise serializers.ValidationError(
                 {
                     field: [
@@ -130,6 +136,9 @@ def create_transaction(
     supplier=None,
     user_reference: str | None = None,
     note: str | None = None,
+    reference: str | None = None,
+    client_uuid=None,
+    allow_negative: bool = False,
 ) -> StockTransaction:
     """Write one header plus one movement per line, all or nothing.
 
@@ -148,10 +157,15 @@ def create_transaction(
     cleaned_reference = _clean(user_reference)
     cleaned_note = _clean(note)
 
-    reference = next_reference("TR", shop_today().year)
+    # `reference` is the document's own number and arrives set only on a
+    # transaction replayed from a device's queue, already numbered in that
+    # device's series. Not to be confused with `user_reference` above, which
+    # is the supplier's delivery-note number.
+    reference = reference or next_reference("TR", shop_today().year)
 
     header = StockTransaction.objects.create(
         reference=reference,
+        client_uuid=client_uuid,
         site=site,
         user_reference=cleaned_reference,
         type=type,
@@ -181,6 +195,7 @@ def create_transaction(
             user=user,
             stock_transaction=header,
             field_prefix=f"lines.{index}.",
+            allow_negative=allow_negative,
         )
         total_quantity += movement.quantity
 

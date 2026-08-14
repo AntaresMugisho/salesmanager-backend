@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.accounts.views import (
+    DeviceRegisterView,
     LoginView,
     LogoutView,
     MeView,
@@ -19,5 +20,6 @@ urlpatterns = [
     path("auth/logout/", LogoutView.as_view(), name="logout"),
     path("auth/me/", MeView.as_view(), name="me"),
     path("settings/", SettingsView.as_view(), name="settings"),
+    path("devices/register/", DeviceRegisterView.as_view(), name="device-register"),
     path("", include(router.urls)),
 ]
