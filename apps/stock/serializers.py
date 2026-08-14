@@ -157,6 +157,9 @@ class TransactionCreateSerializer(serializers.Serializer):
     document_reference = serializers.CharField(
         max_length=20, required=False, allow_null=True, default=None
     )
+    # Minted on the device so a queued transaction keeps one identity either
+    # side of sync. Optional: an online write lets the model default fire.
+    id = serializers.UUIDField(required=False, allow_null=True, default=None)
     lines = TransactionLineInputSerializer(many=True)
 
     def validate_lines(self, value):

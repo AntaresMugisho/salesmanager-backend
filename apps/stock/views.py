@@ -190,8 +190,9 @@ class TransactionViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        device, client_uuid = resolve_offline_write(request)
+        device = resolve_offline_write(request)
         document_reference = data.get("document_reference")
+        transaction_id = data.get("id")
 
         if document_reference and not device:
             raise serializers.ValidationError(
@@ -204,8 +205,8 @@ class TransactionViewSet(
 
         # Before the reference checks, for the reason given in SaleViewSet: a
         # replay carries the same reference as the transaction it replays.
-        if client_uuid:
-            existing = StockTransaction.objects.filter(client_uuid=client_uuid).first()
+        if transaction_id:
+            existing = StockTransaction.objects.filter(pk=transaction_id).first()
             if existing:
                 return Response(StockTransactionSerializer(existing).data, status=200)
 
@@ -240,7 +241,7 @@ class TransactionViewSet(
             user_reference=data.get("reference"),
             note=data.get("note"),
             reference=document_reference,
-            client_uuid=client_uuid,
+            transaction_id=transaction_id,
             allow_negative=bool(device),
         )
 

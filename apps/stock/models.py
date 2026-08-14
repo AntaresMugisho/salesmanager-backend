@@ -152,11 +152,6 @@ class StockTransaction(UUIDModel):
     """
 
     reference = models.CharField(_("référence"), max_length=20, unique=True)
-    #: Set only on a transaction replayed from a device's offline queue. See
-    #: the identical field on `Sale` for why NULL rather than a sentinel.
-    client_uuid = models.UUIDField(
-        _("identifiant client"), null=True, blank=True, unique=True
-    )
     site = models.ForeignKey(
         Site, on_delete=models.PROTECT, related_name="transactions"
     )

@@ -327,6 +327,9 @@ class SaleCreateSerializer(serializers.Serializer):
     document_reference = serializers.CharField(
         max_length=20, required=False, allow_null=True, default=None
     )
+    # Minted on the device so a queued sale keeps one URL either side of sync.
+    # Optional: an online sale lets the model default fire.
+    id = serializers.UUIDField(required=False, allow_null=True, default=None)
     lines = SaleLineInputSerializer(many=True)
 
     def validate_lines(self, value):
@@ -355,6 +358,9 @@ class SaleCreateSerializer(serializers.Serializer):
 class PaymentCreateSerializer(serializers.Serializer):
     """The frontend's `PaymentCreateDto`."""
 
+    # Minted on the device when the payment is queued offline, so replaying it
+    # is a no-op rather than a second payment. Absent on the online path.
+    id = serializers.UUIDField(required=False, allow_null=True, default=None)
     amount = serializers.IntegerField(
         min_value=1,
         error_messages={
