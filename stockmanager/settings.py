@@ -12,6 +12,7 @@ from pathlib import Path
 import dj_database_url
 from antares_dotenv import env
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -196,6 +197,12 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = _as_list(env("CORS_ALLOWED_ORIGINS", "http://localhost:3000"))
 # The frontend sends a bearer token, not a cookie.
 CORS_ALLOW_CREDENTIALS = False
+
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "x-device-id",
+    "x-device-code",
+)
 
 LOGGING = {
     "version": 1,
