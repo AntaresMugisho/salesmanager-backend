@@ -225,3 +225,70 @@ class TestDetail:
             response = client.get(f"{URL}{header.id}/")
 
         assert len(response.json()["lines"]) == 10
+
+
+class TestListWithLines:
+    """The mirror's read: one request returns rows including their lines."""
+
+    def test_the_flag_off_returns_no_lines(self, auth_client, cashier, site, owner):
+        """`TestList` already covers the parameter's *absence*; this covers an
+        explicit false, which is what the mirror sends when it does not want
+        the wider payload."""
+        make(site, owner, quantities=(1, 2))
+        payload = auth_client(cashier).get(f"{URL}?withLines=false").json()["results"][0]
+
+        assert "lines" not in payload
+
+    def test_the_flag_on_returns_lines(self, auth_client, cashier, site, owner):
+        make(site, owner, quantities=(1, 2))
+        payload = (
+            auth_client(cashier).get(f"{URL}?withLines=true").json()["results"][0]
+        )
+
+        assert len(payload["lines"]) == 2
+        # Still a superset: the denormalised count is untouched.
+        assert payload["lineCount"] == 2
+
+    def test_the_lines_keep_their_submission_order(
+        self, auth_client, cashier, site, owner
+    ):
+        """The prefetch carries the ordering `get_lines` used to apply itself.
+        Lose it and the lines silently reorder."""
+        make(site, owner, quantities=(1, 2, 3))
+        payload = (
+            auth_client(cashier).get(f"{URL}?withLines=true").json()["results"][0]
+        )
+
+        assert [row["quantity"] for row in payload["lines"]] == [1, 2, 3]
+
+    def test_the_flag_is_parsed_strictly(self, auth_client, cashier, site, owner):
+        make(site, owner)
+        assert auth_client(cashier).get(f"{URL}?withLines=banana").status_code == 400
+
+    # Two tests pinning one constant, as in the sales suite: a single test
+    # cannot tell a flat count from a count that happens to match. Four is the
+    # list's existing three plus one prefetch -- sales costs two, having both
+    # lines and payments to fetch.
+    FLAT_QUERY_COUNT = 4
+
+    def _flat(self, auth_client, cashier, site, owner, assert_num_queries, count):
+        for _ in range(count):
+            make(site, owner, quantities=(1, 2))
+
+        client = auth_client(cashier)
+        client.get(f"{URL}?withLines=true")  # warm any lazy auth/site lookups
+
+        with assert_num_queries(self.FLAT_QUERY_COUNT):
+            response = client.get(f"{URL}?withLines=true")
+
+        assert len(response.json()["results"]) == count
+
+    def test_the_query_count_is_flat_with_three_transactions(
+        self, auth_client, cashier, site, owner, django_assert_num_queries
+    ):
+        self._flat(auth_client, cashier, site, owner, django_assert_num_queries, 3)
+
+    def test_the_query_count_is_flat_with_eight_transactions(
+        self, auth_client, cashier, site, owner, django_assert_num_queries
+    ):
+        self._flat(auth_client, cashier, site, owner, django_assert_num_queries, 8)

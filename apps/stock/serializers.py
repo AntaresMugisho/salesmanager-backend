@@ -237,5 +237,17 @@ class StockTransactionDetailSerializer(StockTransactionSerializer):
         # Oldest first, with `id` as the tiebreaker: SQLite can give two
         # movements written in one transaction the same microsecond, and the
         # frontend renders these in submission order.
-        movements = obj.lines.select_related("article").order_by("created_at", "id")
+        #
+        # Read the prefetch cache when the view filled it. Any queryset method
+        # on a related manager -- `.select_related()`, `.order_by()` -- bypasses
+        # that cache and re-queries, so calling them unconditionally would make
+        # `prefetch_related` dead weight and turn the mirror's list into N+1.
+        # The view's Prefetch carries the same select_related and ordering, so
+        # both branches yield identical rows.
+        cached = getattr(obj, "_prefetched_objects_cache", {}).get("lines")
+        movements = (
+            cached
+            if cached is not None
+            else obj.lines.select_related("article").order_by("created_at", "id")
+        )
         return StockTransactionLineSerializer(movements, many=True).data
