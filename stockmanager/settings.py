@@ -144,6 +144,7 @@ USE_TZ = True
 SHOP_TIME_ZONE = str(env("SHOP_TIME_ZONE", "Africa/Kinshasa"))
 
 STATIC_URL = "static/"
+STATIC_ROOT = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -200,7 +201,6 @@ CORS_ALLOW_CREDENTIALS = False
 
 CORS_ALLOW_HEADERS = (
     *default_headers,
-    "x-device-id",
     "x-device-code",
 )
 
