@@ -144,6 +144,7 @@ USE_TZ = True
 SHOP_TIME_ZONE = str(env("SHOP_TIME_ZONE", "Africa/Kinshasa"))
 
 STATIC_URL = "static/"
+STATIC_ROOT = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
