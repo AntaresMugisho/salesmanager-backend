@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.translation import gettext_lazy as _
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import filters, mixins, serializers, viewsets
@@ -6,7 +7,7 @@ from rest_framework.response import Response
 
 from apps.accounts.models import Site
 from apps.common.exceptions import Conflict
-from apps.common.filters import CamelCaseQueryParamsMixin
+from apps.common.filters import CamelCaseQueryParamsMixin, StrictBooleanField
 from apps.common.pagination import StandardPagination
 from apps.common.references import (
     resolve_offline_write,
@@ -71,9 +72,30 @@ class SaleViewSet(
     # catalogue's, where cashiers write nothing.
     permission_map = {"cancel": IsManagerOrAbove}
 
+    def _wants_lines(self) -> bool:
+        """`withLines`, arriving as `with_lines`.
+
+        CamelCaseQueryParamsMixin rewrites the query string in `initial()`,
+        before any handler runs, so the snake_case name is the one to read.
+        StrictBooleanField rather than a truthiness test: `withLines=banana`
+        must be refused, not silently mean false — a mirror quietly filled
+        with lineless sales has no symptom until an outage.
+        """
+        raw = self.request.query_params.get("with_lines")
+        if raw is None:
+            return False
+        try:
+            return bool(StrictBooleanField().clean(raw))
+        except DjangoValidationError as exc:
+            # DRF's handler does not translate Django's ValidationError to a
+            # 400 on its own; unwrapped it surfaces as a 500.
+            raise serializers.ValidationError({"withLines": exc.messages}) from exc
+
     def get_queryset(self):
         queryset = sale_queryset()
-        if self.action == "retrieve":
+        if self.action == "retrieve" or (
+            self.action == "list" and self._wants_lines()
+        ):
             return queryset.prefetch_related("lines", "payments")
         return queryset
 
@@ -81,6 +103,8 @@ class SaleViewSet(
         if self.action == "create":
             return SaleCreateSerializer
         if self.action == "retrieve":
+            return SaleDetailSerializer
+        if self.action == "list" and self._wants_lines():
             return SaleDetailSerializer
         return SaleSerializer
 

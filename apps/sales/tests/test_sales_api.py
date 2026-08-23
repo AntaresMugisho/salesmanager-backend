@@ -434,3 +434,65 @@ class TestDetail:
         response = auth_client(cashier).get(f"{URL}{uuid.uuid4()}/")
         assert response.status_code == 404
         assert response.json()["code"] == "not_found"
+
+
+class TestListWithLines:
+    """The mirror's read: one request returns rows including their lines."""
+
+    def test_the_flag_off_returns_no_lines(self, auth_client, cashier, site, owner):
+        make(site, owner)
+        payload = auth_client(cashier).get(URL).json()["results"][0]
+
+        # The regression guard. Every existing consumer of this endpoint
+        # depends on the narrow shape, and adding a key is a breaking change
+        # for the TypeScript `Sale` type that mirrors it.
+        assert "lines" not in payload
+        assert "payments" not in payload
+
+    def test_the_flag_on_returns_lines_and_payments(
+        self, auth_client, cashier, site, owner
+    ):
+        sale = make(site, owner, quantities=(2, 3))
+        PaymentFactory(sale=sale, user=owner, amount=1_000)
+
+        payload = auth_client(cashier).get(f"{URL}?withLines=true").json()["results"][0]
+
+        assert len(payload["lines"]) == 2
+        assert len(payload["payments"]) == 1
+        # Still a superset of the list shape, not a replacement for it.
+        assert payload["paymentStatus"] == "PARTIAL"
+
+    def test_the_flag_is_parsed_strictly(self, auth_client, cashier, site, owner):
+        make(site, owner)
+        response = auth_client(cashier).get(f"{URL}?withLines=banana")
+
+        # Silently meaning false would give the mirror lineless sales with no
+        # error to notice.
+        assert response.status_code == 400
+
+    # The entire risk of this parameter is turning one list query into N.
+    # Two tests pinning one constant, as everywhere else in this suite: a
+    # single test cannot tell a flat count from a count that happens to match.
+    FLAT_QUERY_COUNT = 5
+
+    def _flat(self, auth_client, cashier, site, owner, assert_num_queries, sales):
+        for _ in range(sales):
+            make(site, owner, quantities=(2, 3))
+
+        client = auth_client(cashier)
+        client.get(f"{URL}?withLines=true")  # warm any lazy auth/site lookups
+
+        with assert_num_queries(self.FLAT_QUERY_COUNT):
+            response = client.get(f"{URL}?withLines=true")
+
+        assert len(response.json()["results"]) == sales
+
+    def test_the_query_count_is_flat_with_three_sales(
+        self, auth_client, cashier, site, owner, django_assert_num_queries
+    ):
+        self._flat(auth_client, cashier, site, owner, django_assert_num_queries, 3)
+
+    def test_the_query_count_is_flat_with_eight_sales(
+        self, auth_client, cashier, site, owner, django_assert_num_queries
+    ):
+        self._flat(auth_client, cashier, site, owner, django_assert_num_queries, 8)

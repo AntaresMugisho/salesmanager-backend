@@ -201,7 +201,6 @@ CORS_ALLOW_CREDENTIALS = False
 
 CORS_ALLOW_HEADERS = (
     *default_headers,
-    "x-device-id",
     "x-device-code",
 )
 

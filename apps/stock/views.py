@@ -1,8 +1,10 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import (
     Case,
     ExpressionWrapper,
     F,
     IntegerField,
+    Prefetch,
     Sum,
     When,
 )
@@ -18,7 +20,7 @@ from apps.accounts.models import Site
 from apps.catalogue.querysets import article_queryset
 from apps.catalogue.serializers import ArticleSerializer
 from apps.common.dates import today_start
-from apps.common.filters import CamelCaseQueryParamsMixin
+from apps.common.filters import CamelCaseQueryParamsMixin, StrictBooleanField
 from apps.common.pagination import StandardPagination
 from apps.common.permissions import IsManagerOrAbove, RoleScopedPermissionMixin
 from apps.common.references import (
@@ -185,13 +187,50 @@ class TransactionViewSet(
     filterset_class = TransactionFilterSet
     search_fields = ["reference", "user_reference", "supplier_name", "note"]
 
+    def _wants_lines(self) -> bool:
+        """`withLines`, arriving as `with_lines`.
+
+        CamelCaseQueryParamsMixin rewrites the query string in `initial()`,
+        before any handler runs, so the snake_case name is the one to read.
+        StrictBooleanField rather than a truthiness test: `withLines=banana`
+        must be refused, not silently mean false — a mirror quietly filled
+        with lineless transactions has no symptom until an outage.
+        """
+        raw = self.request.query_params.get("with_lines")
+        if raw is None:
+            return False
+        try:
+            return bool(StrictBooleanField().clean(raw))
+        except DjangoValidationError as exc:
+            # DRF's handler does not translate Django's ValidationError to a
+            # 400 on its own; unwrapped it surfaces as a 500.
+            raise serializers.ValidationError({"withLines": exc.messages}) from exc
+
     def get_queryset(self):
-        return StockTransaction.objects.select_related("site", "supplier", "user")
+        queryset = StockTransaction.objects.select_related("site", "supplier", "user")
+        if self.action == "retrieve" or (
+            self.action == "list" and self._wants_lines()
+        ):
+            # Explicit Prefetch, not `prefetch_related("lines__article")`: the
+            # select_related and the ordering have to live on the prefetched
+            # queryset, because StockTransactionDetailSerializer.get_lines
+            # reads the cache and can no longer apply them itself.
+            return queryset.prefetch_related(
+                Prefetch(
+                    "lines",
+                    queryset=StockMovement.objects.select_related("article").order_by(
+                        "created_at", "id"
+                    ),
+                )
+            )
+        return queryset
 
     def get_serializer_class(self):
         if self.action == "create":
             return TransactionCreateSerializer
         if self.action == "retrieve":
+            return StockTransactionDetailSerializer
+        if self.action == "list" and self._wants_lines():
             return StockTransactionDetailSerializer
         return StockTransactionSerializer
 
