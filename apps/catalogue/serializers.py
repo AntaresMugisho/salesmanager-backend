@@ -329,8 +329,17 @@ class ArticleSerializer(serializers.ModelSerializer):
         article = super().update(instance, validated_data)
 
         if reorder_threshold is not None:
-            # Only the threshold. Quantity has exactly one writer.
-            StockLevel.objects.filter(
-                article=article, site=self.context["site"]
-            ).update(reorder_threshold=reorder_threshold)
+            # `update_or_create`, not `filter().update()`: an article seeded
+            # outside the API has no level row, and filtering for one that was
+            # never written matches nothing, updates nothing, and still answers
+            # 200 — a write that reports success and does not happen.
+            #
+            # Only the threshold is passed as a default. Quantity keeps its
+            # model default of 0 on the row this creates and is untouched on
+            # one that already exists, because quantity has exactly one writer.
+            StockLevel.objects.update_or_create(
+                article=article,
+                site=self.context["site"],
+                defaults={"reorder_threshold": reorder_threshold},
+            )
         return article

@@ -226,6 +226,28 @@ class TestUpdate:
         assert response.json()["stock"]["reorderThreshold"] == 50
         assert response.json()["stock"]["quantity"] == 30
 
+    def test_the_threshold_is_editable_on_an_article_with_no_level(
+        self, auth_client, manager, site
+    ):
+        """An article seeded outside the API has no level row of its own.
+
+        `seeder.py` builds articles with `Article.objects.create`, which does
+        not write the `StockLevel` the serializer's `create` would. Filtering
+        for a row that was never written matches nothing and updates nothing,
+        so the request answered 200 while saving the threshold nowhere — a
+        write that reports success and does not happen.
+        """
+        article = ArticleFactory()
+        assert not StockLevel.objects.filter(article=article).exists()
+
+        response = auth_client(manager).patch(
+            detail_url(article), {"reorderThreshold": 50}, format="json"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["stock"]["reorderThreshold"] == 50
+        assert StockLevel.objects.get(article=article, site=site).quantity == 0
+
     def test_updating_the_threshold_does_not_touch_the_quantity(
         self, auth_client, manager, site
     ):

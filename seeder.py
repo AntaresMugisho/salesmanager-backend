@@ -7,6 +7,7 @@ django.setup()
 
 from apps.catalogue.models import Article, Category
 from apps.accounts.models import Site, User
+from apps.stock.models import StockLevel
 from django.db import transaction
 
 
@@ -32,6 +33,19 @@ with transaction.atomic():
                 category_id=row["category_id"],
                 unit=row["unit"]
             )
+
+    # Every article gets a level at every site, because the rest of the app
+    # assumes one exists: the API creates it alongside the article, and a
+    # threshold saved against a row that was never written used to vanish
+    # without an error. Quantity stays 0 — stock arrives through movements.
+    StockLevel.objects.bulk_create(
+        [
+            StockLevel(article=article, site=site)
+            for article in Article.objects.all()
+            for site in Site.objects.all()
+        ],
+        ignore_conflicts=True,
+    )
 
 
     
