@@ -66,6 +66,7 @@ class Article(NameSortedModel, UUIDModel):
     class Unit(models.TextChoices):
         PIECE = "PIECE", _("Pièce")
         KG = "KG", _("Kilogramme")
+        METRE = "METRE", _("Mètre")
         LITRE = "LITRE", _("Litre")
         PAQUET = "PAQUET", _("Paquet")
         CARTON = "CARTON", _("Carton")
