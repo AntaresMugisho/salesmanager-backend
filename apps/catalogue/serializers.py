@@ -267,17 +267,6 @@ class ArticleSerializer(serializers.ModelSerializer):
             self.instance.purchase_price if self.instance else 0,
         )
         sale = attrs.get("sale_price", self.instance.sale_price if self.instance else 0)
-        if sale < purchase:
-            raise serializers.ValidationError(
-                {
-                    "sale_price": [
-                        _(
-                            "Le prix de vente doit être supérieur ou égal au "
-                            "prix d'achat."
-                        )
-                    ]
-                }
-            )
         return attrs
 
     @transaction.atomic
