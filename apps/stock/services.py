@@ -56,7 +56,7 @@ def apply_movement(
 
     `field_prefix` routes validation errors to a form row: passing
     `"lines.2."` produces the key `lines.2.quantity`, which is
-    react-hook-form's array-field syntax and what sub-project 3 needs.
+    react-hook-form's array-field syntax.
 
     `allow_negative` switches off the sufficiency check for OUT. It is set
     only by a write replayed from a device's offline queue: that sale already
@@ -123,7 +123,7 @@ def apply_movement(
         quantity=recorded,
         quantity_before=quantity_before,
         quantity_after=quantity_after,
-        unit_cost=unit_cost,
+        unit_cost=unit_cost or article.purchase_price,
         reference=_clean(reference),
         note=_clean(note),
         transaction=stock_transaction,
